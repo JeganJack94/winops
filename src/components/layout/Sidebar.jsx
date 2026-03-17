@@ -1,3 +1,5 @@
+import React, { useState } from 'react';
+import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Receipt, Truck, FileBarChart, PieChart, Settings, Menu, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 

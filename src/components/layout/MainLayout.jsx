@@ -28,7 +28,7 @@ export default function MainLayout() {
 
         {/* Page Content */}
         <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 pb-24 md:pb-6 relative custom-scrollbar">
-          <div className="max-w-7xl mx-auto min-h-full">
+          <div className="w-full min-h-full">
             <Outlet />
           </div>
         </main>
