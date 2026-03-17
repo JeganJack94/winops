@@ -5,8 +5,10 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { riderService } from '../services/riderService';
 import { settingsService } from '../services/settingsService';
+import { useAuth } from '../context/AuthContext';
 
 export default function Settings() {
+  const { logout } = useAuth();
   const [riders, setRiders] = useState([]);
   const [newRiderName, setNewRiderName] = useState('');
   const [newRiderPhone, setNewRiderPhone] = useState('');
@@ -230,7 +232,7 @@ export default function Settings() {
       </div>
 
       <div className="pt-6 border-t border-gray-100 dark:border-gray-800">
-        <Button variant="danger" className="w-full sm:w-auto px-8">
+        <Button variant="danger" className="w-full sm:w-auto px-8" onClick={logout}>
           <LogOut className="w-4 h-4 mr-2" />
           Logout
         </Button>
