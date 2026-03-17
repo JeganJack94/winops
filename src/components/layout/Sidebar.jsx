@@ -1,6 +1,5 @@
-import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, Receipt, Truck, FileBarChart, PieChart, Settings, Menu, ChevronLeft } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 const navigation = [
   { name: 'Dashboard', to: '/', icon: LayoutDashboard },
@@ -16,14 +15,22 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
     <div className={`hidden md:flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out bg-secondary dark:bg-gray-900 border-r border-blue-800/50 dark:border-gray-800 ${isOpen ? 'w-64' : 'w-20'}`}>
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center h-16 flex-shrink-0 px-4 bg-blue-900 dark:bg-gray-950 justify-between">
-          {isOpen && (
-            <div className="flex-1 flex items-center justify-center overflow-hidden">
-               <img src="/logo.png" alt="Win Express" className="h-10 object-contain w-auto max-w-full mix-blend-multiply dark:mix-blend-screen" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-               <span style={{ display: 'none' }} className="text-xl font-bold tracking-tight text-white whitespace-nowrap">
-                  <span className="text-primary">Win</span>Ops
-               </span>
-            </div>
-          )}
+          <AnimatePresence mode="wait">
+            {isOpen && (
+              <motion.div 
+                key="logo-text"
+                initial={{ opacity: 0, x: -10 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -10 }}
+                transition={{ duration: 0.3 }}
+                className="flex-1 flex items-center overflow-hidden"
+              >
+                <span className="text-xl font-bold tracking-tight text-white whitespace-nowrap">
+                  <span className="text-primary">Win</span> Express
+                </span>
+              </motion.div>
+            )}
+          </AnimatePresence>
           <button 
             onClick={toggleSidebar} 
             className={`p-1.5 rounded-md text-gray-300 hover:text-white hover:bg-blue-800/50 transition-colors ${!isOpen ? 'mx-auto' : ''}`}

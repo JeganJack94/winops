@@ -16,12 +16,13 @@ export default function MainLayout() {
       <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
       
       {/* Main content area */}
-      <div className={`flex-1 flex flex-col min-w-0 overflow-hidden transition-all duration-300 ${isSidebarOpen ? 'md:ml-64' : 'md:ml-20'}`}>
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile Header */}
         <header className="md:hidden bg-white dark:bg-gray-800 shadow-sm px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div className="flex items-center">
-             <img src="/logo.png" alt="Win Express" className="h-8 object-contain mix-blend-multiply dark:mix-blend-screen" onError={(e) => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
-             <h1 style={{ display: 'none' }} className="text-xl font-bold text-primary">WinOps</h1>
+             <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
+                <span className="text-primary">Win</span> <span className="text-gray-400">Express</span>
+             </h1>
           </div>
         </header>
 
