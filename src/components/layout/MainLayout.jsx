@@ -1,7 +1,9 @@
+import React, { useState } from 'react';
+import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
 import { useTheme } from '../../context/ThemeContext';
-import { Sun, Moon } from 'lucide-react';
+import { Sun, Moon, Truck } from 'lucide-react';
 
 export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -20,7 +22,10 @@ export default function MainLayout() {
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile Header */}
         <header className="md:hidden bg-white dark:bg-gray-800 shadow-sm px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="flex items-center">
+          <div className="flex items-center gap-2">
+             <div className="bg-primary/10 p-1.5 rounded-lg">
+                <Truck className="h-5 w-5 text-primary" />
+             </div>
              <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
                 <span className="text-primary">Win</span> <span className="text-gray-400">Express</span>
              </h1>

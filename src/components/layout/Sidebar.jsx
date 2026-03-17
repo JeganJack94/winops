@@ -14,7 +14,7 @@ const navigation = [
 
 export default function Sidebar({ isOpen, toggleSidebar }) {
   return (
-    <div className={`hidden md:flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out bg-secondary dark:bg-gray-900 border-r border-blue-800/50 dark:border-gray-800 ${isOpen ? 'w-64' : 'w-20'}`}>
+    <div className={`hidden md:flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out bg-secondary dark:bg-[#0f172a] border-r border-blue-800/10 dark:border-gray-800 shadow-xl ${isOpen ? 'w-64' : 'w-20'}`}>
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center h-16 flex-shrink-0 px-4 bg-blue-900 dark:bg-gray-950 justify-between">
           <AnimatePresence mode="wait">
@@ -51,10 +51,10 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                   to={item.to}
                   title={!isOpen ? item.name : undefined}
                   className={({ isActive }) =>
-                    `group flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-all duration-200 ${
+                    `group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
                       isActive
-                        ? 'bg-blue-800/80 dark:bg-gray-800 text-white'
-                        : 'text-gray-300 hover:bg-blue-800/40 dark:hover:bg-gray-800/50 hover:text-white'
+                        ? 'bg-blue-800/80 dark:bg-primary/20 text-white dark:text-primary'
+                        : 'text-gray-300 dark:text-gray-400 hover:bg-blue-800/40 dark:hover:bg-gray-800/50 hover:text-white dark:hover:text-white'
                     } ${!isOpen && 'justify-center px-0 py-3'}`
                   }
                 >
