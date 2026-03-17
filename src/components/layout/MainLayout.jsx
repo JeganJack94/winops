@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
-import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
+import { useTheme } from '../../context/ThemeContext';
+import { Sun, Moon } from 'lucide-react';
 
 export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const { theme, toggleTheme } = useTheme();
 
   const toggleSidebar = () => {
     setIsSidebarOpen(prev => !prev);
@@ -24,6 +25,22 @@ export default function MainLayout() {
                 <span className="text-primary">Win</span> <span className="text-gray-400">Express</span>
              </h1>
           </div>
+          <button 
+            onClick={toggleTheme}
+            className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+          >
+            {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
+        </header>
+
+        {/* Desktop Header/Breadcrumb area */}
+        <header className="hidden md:flex bg-white dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-800 items-center justify-end px-8 py-4 flex-shrink-0">
+          <button 
+            onClick={toggleTheme}
+            className="p-2 rounded-lg bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-700"
+          >
+            {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+          </button>
         </header>
 
         {/* Page Content */}

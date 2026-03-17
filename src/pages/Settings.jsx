@@ -6,14 +6,15 @@ import { Input } from '../components/ui/Input';
 import { riderService } from '../services/riderService';
 import { settingsService } from '../services/settingsService';
 import { useAuth } from '../context/AuthContext';
+import { useTheme } from '../context/ThemeContext';
 
 export default function Settings() {
   const { logout } = useAuth();
+  const { theme, toggleTheme } = useTheme();
   const [riders, setRiders] = useState([]);
   const [newRiderName, setNewRiderName] = useState('');
   const [newRiderPhone, setNewRiderPhone] = useState('');
   const [showAddRider, setShowAddRider] = useState(false);
-  const [theme, setTheme] = useState(localStorage.getItem('theme') || 'light');
   const [settings, setSettings] = useState({
     ratePerParcel: 18,
     companyName: 'Win Express',
@@ -32,20 +33,6 @@ export default function Settings() {
       unsubscribeSettings();
     };
   }, []);
-
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [theme]);
-
-  const toggleTheme = () => {
-    const newTheme = theme === 'dark' ? 'light' : 'dark';
-    setTheme(newTheme);
-    localStorage.setItem('theme', newTheme);
-  };
 
   const handleSaveRate = async () => {
     try {

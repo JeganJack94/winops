@@ -4,6 +4,7 @@ import { Button } from '../components/ui/Button';
 import { Download, Calendar as CalendarIcon } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
+import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -29,6 +30,7 @@ ChartJS.register(
 );
 
 export default function Reports() {
+  const { theme } = useTheme();
   const [dateRange, setDateRange] = useState('This Week');
   const [riderEntries, setRiderEntries] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -154,11 +156,24 @@ export default function Reports() {
                   intersect: false,
                 },
                 scales: {
-                  x: { grid: { display: false } },
-                  y: { grid: { color: 'rgba(156, 163, 175, 0.1)' } }
+                  x: { 
+                    grid: { display: false },
+                    ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
+                  },
+                  y: { 
+                    grid: { color: theme === 'dark' ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.5)' },
+                    ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
+                  }
                 },
                 plugins: {
-                  legend: { position: 'top', align: 'end', labels: { usePointStyle: true } }
+                  legend: { 
+                    position: 'top', 
+                    align: 'end', 
+                    labels: { 
+                      usePointStyle: true,
+                      color: theme === 'dark' ? '#d1d5db' : '#374151'
+                    } 
+                  }
                 }
               }}
             />

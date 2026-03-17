@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Truck, CheckCircle2, Clock, IndianRupee } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
+import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -38,6 +39,7 @@ const StatCard = ({ title, value, icon: Icon, colorClass }) => (
 );
 
 export default function Dashboard() {
+  const { theme } = useTheme();
   const [hubEntries, setHubEntries] = useState([]);
   const [riderEntries, setRiderEntries] = useState([]);
   const [expenses, setExpenses] = useState([]);
@@ -140,11 +142,28 @@ export default function Dashboard() {
                   responsive: true,
                   maintainAspectRatio: false,
                   scales: {
-                    x: { stacked: true, grid: { display: false } },
-                    y: { stacked: true, border: { display: false } }
+                    x: { 
+                      stacked: true, 
+                      grid: { display: false },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
+                    },
+                    y: { 
+                      stacked: true, 
+                      border: { display: false },
+                      grid: { color: theme === 'dark' ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.5)' },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
+                    }
                   },
                   plugins: {
-                    legend: { position: 'top', align: 'end', labels: { usePointStyle: true, boxWidth: 8 } }
+                    legend: { 
+                      position: 'top', 
+                      align: 'end', 
+                      labels: { 
+                        usePointStyle: true, 
+                        boxWidth: 8,
+                        color: theme === 'dark' ? '#d1d5db' : '#374151'
+                      } 
+                    }
                   }
                 }}
               />

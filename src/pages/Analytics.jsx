@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { deliveryService } from '../services/deliveryService';
+import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -26,6 +27,7 @@ ChartJS.register(
 );
 
 export default function Analytics() {
+  const { theme } = useTheme();
   const [hubEntries, setHubEntries] = useState([]);
   const [riderEntries, setRiderEntries] = useState([]);
 
@@ -133,10 +135,14 @@ export default function Analytics() {
                   responsive: true,
                   maintainAspectRatio: false,
                   scales: {
-                    x: { grid: { display: false } },
+                    x: { 
+                      grid: { display: false },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
+                    },
                     y: { 
                       beginAtZero: true,
-                      grid: { color: 'rgba(156, 163, 175, 0.1)' } 
+                      grid: { color: theme === 'dark' ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.5)' },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
                     }
                   },
                   plugins: {
@@ -163,9 +169,13 @@ export default function Analytics() {
                   scales: {
                     x: { 
                       max: 100,
-                      grid: { color: 'rgba(156, 163, 175, 0.1)' } 
+                      grid: { color: theme === 'dark' ? 'rgba(75, 85, 99, 0.2)' : 'rgba(229, 231, 235, 0.5)' },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
                     },
-                    y: { grid: { display: false } }
+                    y: { 
+                      grid: { display: false },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' }
+                    }
                   },
                   plugins: {
                     legend: { display: false }

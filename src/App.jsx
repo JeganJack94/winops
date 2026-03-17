@@ -8,6 +8,7 @@ import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Onboarding from './pages/Onboarding';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { ThemeProvider } from './context/ThemeContext';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -26,8 +27,9 @@ const ProtectedRoute = ({ children }) => {
 function App() {
   return (
     <AuthProvider>
-      <BrowserRouter>
-        <Routes>
+      <ThemeProvider>
+        <BrowserRouter>
+          <Routes>
           <Route path="/login" element={<Onboarding />} />
           <Route 
             path="/" 
@@ -48,6 +50,7 @@ function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>
+    </ThemeProvider>
     </AuthProvider>
   );
 }

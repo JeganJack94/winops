@@ -11,12 +11,14 @@ import {
   Legend
 } from 'chart.js';
 import { Pie } from 'react-chartjs-2';
+import { useTheme } from '../context/ThemeContext';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const EXPENSE_TYPES = ['Fuel', 'Salary', 'Maintenance', 'Utilities', 'Rent', 'Misc'];
 
 export default function Expenses() {
+  const { theme } = useTheme();
   const [searchTerm, setSearchTerm] = useState('');
   const [expenses, setExpenses] = useState([]);
   const [showForm, setShowForm] = useState(false);
@@ -219,7 +221,7 @@ export default function Expenses() {
                       labels: {
                         usePointStyle: true,
                         padding: 20,
-                        color: typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? '#9ca3af' : '#4b5563'
+                        color: theme === 'dark' ? '#9ca3af' : '#4b5563'
                       }
                     }
                   }
