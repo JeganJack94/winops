@@ -1,35 +1,51 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+} from 'firebase/auth';
+import { auth } from '../services/firebase';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const authStatus = localStorage.getItem('isLoggedIn') === 'true';
-    setIsAuthenticated(authStatus);
-    setIsLoading(false);
+    // Listen to Firebase auth state changes
+    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+      setUser(firebaseUser);
+      setIsLoading(false);
+    });
+    return () => unsubscribe();
   }, []);
 
-  const login = (username, password) => {
-    // Default credentials as requested
-    if (username === 'admin' && password === 'admin123') {
-      localStorage.setItem('isLoggedIn', 'true');
-      setIsAuthenticated(true);
-      return true;
-    }
-    return false;
+  const login = async (email, password) => {
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    return result.user;
   };
 
-  const logout = () => {
-    localStorage.removeItem('isLoggedIn');
-    setIsAuthenticated(false);
+  const logout = async () => {
+    await signOut(auth);
+  };
+
+  const resetPassword = async (email) => {
+    await sendPasswordResetEmail(auth, email);
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        isAuthenticated: !!user,
+        isLoading,
+        login,
+        logout,
+        resetPassword,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

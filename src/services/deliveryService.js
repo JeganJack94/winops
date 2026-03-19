@@ -24,6 +24,20 @@ export const deliveryService = {
     });
   },
 
+  subscribeToAllHubEntries: (callback) => {
+    const q = query(
+      collection(db, HUB_COLLECTION),
+      orderBy('timestamp', 'desc')
+    );
+    return onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      callback(entries);
+    });
+  },
+
   subscribeToHubEntries: (callback, limitCount = 10) => {
     const q = query(
       collection(db, HUB_COLLECTION), 

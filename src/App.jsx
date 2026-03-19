@@ -8,7 +8,8 @@ import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Onboarding from './pages/Onboarding';
 import { AuthProvider, useAuth } from './context/AuthContext';
-import { ThemeProvider } from './context/ThemeContext';
+import { ThemeProvider, useTheme } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, isLoading } = useAuth();
@@ -24,35 +25,40 @@ const ProtectedRoute = ({ children }) => {
   return children;
 };
 
-function App() {
+function AppContent() {
   return (
-    <AuthProvider>
-      <ThemeProvider>
-        <BrowserRouter>
-          <Routes>
-          <Route path="/login" element={<Onboarding />} />
-          <Route 
-            path="/" 
-            element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
-            }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="expenses" element={<Expenses />} />
-            <Route path="delivery" element={<Delivery />} />
-            <Route path="reports" element={<Reports />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="settings" element={<Settings />} />
-          </Route>
-          {/* Fallback */}
-          <Route path="*" element={<Navigate to="/" replace />} />
-        </Routes>
-      </BrowserRouter>
-    </ThemeProvider>
-    </AuthProvider>
+    <Routes>
+      <Route path="/login" element={<Onboarding />} />
+      <Route 
+        path="/" 
+        element={
+          <ProtectedRoute>
+            <MainLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route index element={<Dashboard />} />
+        <Route path="expenses" element={<Expenses />} />
+        <Route path="delivery" element={<Delivery />} />
+        <Route path="reports" element={<Reports />} />
+        <Route path="analytics" element={<Analytics />} />
+        <Route path="settings" element={<Settings />} />
+      </Route>
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <AuthProvider>
+        <ThemeProvider>
+          <ToastProvider>
+            <AppContent />
+          </ToastProvider>
+        </ThemeProvider>
+      </AuthProvider>
+    </BrowserRouter>
+  );
+}

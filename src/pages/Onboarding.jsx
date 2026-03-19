@@ -1,35 +1,71 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { LogIn, Lock, User, Terminal } from 'lucide-react';
+import { LogIn, Lock, Mail, Terminal, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { Button } from '../components/ui/Button';
-import { Input } from '../components/ui/Input';
 import { Card, CardContent } from '../components/ui/Card';
 
 export default function Onboarding() {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const { login } = useAuth();
+  const [showReset, setShowReset] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
+  const { login, resetPassword } = useAuth();
   const navigate = useNavigate();
+
+  const getErrorMessage = (code) => {
+    switch (code) {
+      case 'auth/user-not-found':
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential':
+        return 'Invalid email or password. Please try again.';
+      case 'auth/invalid-email':
+        return 'Please enter a valid email address.';
+      case 'auth/too-many-requests':
+        return 'Too many failed attempts. Account temporarily locked. Reset your password to regain access.';
+      case 'auth/user-disabled':
+        return 'This account has been disabled. Contact the administrator.';
+      case 'auth/network-request-failed':
+        return 'Network error. Please check your connection and try again.';
+      default:
+        return 'Authentication failed. Please try again.';
+    }
+  };
 
   const handleLogin = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
 
-    // Simulate a small delay for premium feel
-    setTimeout(() => {
-      const success = login(username, password);
-      if (success) {
-        navigate('/');
-      } else {
-        setError('Invalid credentials. Please use admin/admin123');
-        setIsLoading(false);
-      }
-    }, 800);
+    try {
+      await login(email, password);
+      navigate('/');
+    } catch (err) {
+      setError(getErrorMessage(err.code));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handlePasswordReset = async (e) => {
+    e.preventDefault();
+    if (!email) {
+      setError('Please enter your email address above to reset your password.');
+      return;
+    }
+    setIsLoading(true);
+    setError('');
+    try {
+      await resetPassword(email);
+      setResetSent(true);
+    } catch (err) {
+      setError(getErrorMessage(err.code));
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -101,20 +137,20 @@ export default function Onboarding() {
             <CardContent className="p-8 lg:p-12">
               <div className="mb-8">
                 <h2 className="text-2xl font-bold text-white mb-2">Login to Dashboard</h2>
-                <p className="text-gray-400 text-sm">Enter administrative credentials to continue.</p>
+                <p className="text-gray-400 text-sm">Enter your credentials to continue.</p>
               </div>
 
               <form onSubmit={handleLogin} className="space-y-6">
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <label className="text-xs font-medium text-gray-400 uppercase tracking-wider px-1">Username</label>
+                    <label className="text-xs font-medium text-gray-400 uppercase tracking-wider px-1">Email</label>
                     <div className="relative">
-                      <User className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-500" />
                       <input
-                        type="text"
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        placeholder="admin"
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="you@example.com"
                         className="w-full pl-10 pr-4 py-3 bg-white/5 border border-white/10 rounded-xl text-white placeholder:text-gray-600 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
                         required
                       />
@@ -148,6 +184,16 @@ export default function Onboarding() {
                       {error}
                     </motion.p>
                   )}
+                  {resetSent && (
+                    <motion.p
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      exit={{ opacity: 0, height: 0 }}
+                      className="text-green-400 text-sm bg-green-400/10 p-3 rounded-lg border border-green-400/20"
+                    >
+                      Password reset email sent! Check your inbox.
+                    </motion.p>
+                  )}
                 </AnimatePresence>
 
                 <Button 
@@ -169,7 +215,19 @@ export default function Onboarding() {
                   )}
                 </Button>
 
-                <div className="pt-4 text-center">
+                <div className="pt-2 text-center">
+                  <button
+                    type="button"
+                    onClick={handlePasswordReset}
+                    disabled={isLoading}
+                    className="text-xs text-gray-500 hover:text-primary transition-colors inline-flex items-center gap-1"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    Forgot password? Send reset link
+                  </button>
+                </div>
+
+                <div className="pt-2 text-center">
                   <p className="text-xs text-gray-500">
                     Proprietary Software. Unauthorized access is strictly prohibited.
                   </p>
