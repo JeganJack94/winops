@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../hooks/useToast';
-import { Loader2 } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 
 const Modal = ({ onClose, title, children }) => {
   useEffect(() => {
@@ -74,6 +74,12 @@ export default function Settings() {
   const [newRiderPhone, setNewRiderPhone] = useState('');
   const [showAddRider, setShowAddRider] = useState(false);
   const [isAddingRider, setIsAddingRider] = useState(false);
+  
+  // Reset Data States
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [isResetting, setIsResetting] = useState(false);
+  const [resetConfirmWord, setResetConfirmWord] = useState('');
+
   const [settings, setSettings] = useState({
     ratePerParcel: 18,
     companyName: 'Win Express',
@@ -146,6 +152,27 @@ export default function Settings() {
         console.error('Error deleting rider:', error);
         toast.error('Failed to remove rider');
       }
+    }
+  };
+
+  const handleResetData = async (e) => {
+    e.preventDefault();
+    if (resetConfirmWord !== 'RESET') {
+      toast.error('Please type RESET exactly to confirm');
+      return;
+    }
+    
+    setIsResetting(true);
+    try {
+      await settingsService.wipeOperationalData();
+      toast.success('All operational data has been cleared.');
+      setShowResetModal(false);
+      setResetConfirmWord('');
+    } catch (error) {
+      console.error('Error wiping data:', error);
+      toast.error('Failed to wipe data.');
+    } finally {
+      setIsResetting(false);
     }
   };
 
@@ -242,6 +269,24 @@ export default function Settings() {
                   </Button>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Danger Zone */}
+          <Card className="border border-rose-200 shadow-xl shadow-rose-200/50 dark:shadow-none bg-rose-50 dark:bg-rose-900/10 dark:border-rose-900/50 overflow-hidden">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-bold text-rose-600 dark:text-rose-500 uppercase tracking-wider">Danger Zone</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6 pt-2">
+              <div>
+                <p className="text-sm font-bold text-rose-800 dark:text-rose-200">Start Fresh</p>
+                <p className="text-xs text-rose-600 dark:text-rose-400 font-medium leading-relaxed mt-1">
+                  Permanently clear all daily tracking, hub items, and earnings data. (Riders are kept).
+                </p>
+              </div>
+              <Button onClick={() => setShowResetModal(true)} className="w-full bg-rose-600 hover:bg-rose-700 text-white font-bold h-11 rounded-xl shadow-lg shadow-rose-600/20 active:scale-95 transition-all">
+                Reset Operational Data
+              </Button>
             </CardContent>
           </Card>
         </div>
@@ -373,6 +418,50 @@ export default function Settings() {
                   className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-orange-600/20"
                 >
                   {isAddingRider ? "Adding..." : "Add Rider"}
+                </Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+
+        {showResetModal && (
+          <Modal onClose={() => setShowResetModal(false)} title="System Reset">
+            <form onSubmit={handleResetData} className="space-y-6">
+              <div className="bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/20 rounded-xl p-4 flex gap-4 text-rose-600 dark:text-rose-400">
+                <AlertTriangle className="w-6 h-6 flex-shrink-0" />
+                <p className="text-sm font-bold leading-relaxed">
+                  This action is irreversible. It will wipe all history, delivery tracking, and earnings overlays.
+                </p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300">
+                  Type <span className="text-rose-500 font-black">RESET</span> to confirm
+                </label>
+                <Input
+                  value={resetConfirmWord}
+                  onChange={e => setResetConfirmWord(e.target.value)}
+                  placeholder="RESET"
+                  required
+                  autoFocus
+                  className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm font-black tracking-widest text-center"
+                />
+              </div>
+              <div className="pt-2 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 h-12 rounded-xl font-bold text-slate-600"
+                  onClick={() => setShowResetModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isResetting || resetConfirmWord !== 'RESET'}
+                  isLoading={isResetting}
+                  className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-rose-600/20"
+                >
+                  Confirm Wipe
                 </Button>
               </div>
             </form>
