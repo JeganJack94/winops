@@ -1,660 +1,602 @@
 import { useState, useEffect, useMemo } from 'react';
 import { 
   Search, Plus, Trash2, MapPin, User, Calendar, Edit2, 
-  Truck, CheckCircle2, AlertCircle, X, ChevronRight, Filter
+  Truck, CheckCircle2, AlertCircle, X, Save, Share2, History, LayoutDashboard
 } from 'lucide-react';
+// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../hooks/useToast';
 import { deliveryService } from '../services/deliveryService';
 import { riderService } from '../services/riderService';
-import { settingsService } from '../services/settingsService';
-import { useTheme } from '../context/ThemeContext';
 
 export default function Delivery() {
-  const { theme } = useTheme();
   const toast = useToast();
-  const [activeTab, setActiveTab] = useState('hub');
-  const [hubSearch, setHubSearch] = useState('');
-  const [riderSearch, setRiderSearch] = useState('');
+  
+  const [activeTab, setActiveTab] = useState('daily'); // 'daily' or 'history'
+  const [activeDate, setActiveDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [riders, setRiders] = useState([]);
-  const [hubEntries, setHubEntries] = useState([]);
-  const [riderEntries, setRiderEntries] = useState([]);
-  const [rate, setRate] = useState(18);
+  const [allRecords, setAllRecords] = useState([]);
+  
+  // Local state for the daily summary inputs
+  const [hubForm, setHubForm] = useState({ 
+    carryForwardDelivery: 0, 
+    carryForwardPickup: 0, 
+    receivedDelivery: 0, 
+    receivedPickup: 0 
+  });
 
   // Modal States
-  const [showHubModal, setShowHubModal] = useState(false);
   const [showRiderModal, setShowRiderModal] = useState(false);
-  const [editingHubId, setEditingHubId] = useState(null);
-  const [editingRiderId, setEditingRiderId] = useState(null);
-
-  // Form States
-  const [hubForm, setHubForm] = useState({
-    date: new Date().toISOString().split('T')[0],
-    received: ''
-  });
+  const [editingRiderIndex, setEditingRiderIndex] = useState(null);
 
   const [riderForm, setRiderForm] = useState({
     riderId: '',
     riderName: '',
-    date: new Date().toISOString().split('T')[0],
-    area: '',
-    assigned: '',
-    delivered: '',
-    notes: ''
+    assignedDelivery: 0,
+    assignedPickup: 0,
+    completedDelivery: 0,
+    completedPickup: 0,
+    amountCollected: 0
   });
 
   useEffect(() => {
     const unsubRiders = riderService.subscribeToRiders(setRiders);
-    const unsubHub = deliveryService.subscribeToHubEntries(setHubEntries);
-    const unsubRiderEntries = deliveryService.subscribeToRiderEntries(setRiderEntries);
-    const unsubSettings = settingsService.subscribeToSettings((s) => setRate(s.ratePerParcel));
+    const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
 
     return () => {
       unsubRiders();
-      unsubHub();
-      unsubRiderEntries();
-      unsubSettings();
+      unsubRecords();
     };
   }, []);
 
-  const handleHubSubmit = async (e) => {
-    e.preventDefault();
-    const received = Number(hubForm.received);
+  // Compute Active Record
+  const activeRecord = useMemo(() => {
+    return allRecords.find(r => r.date === activeDate);
+  }, [allRecords, activeDate]);
+
+  // Sync hub form when active record changes
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (activeRecord) {
+      setHubForm({
+        carryForwardDelivery: activeRecord.carryForwardDelivery ?? activeRecord.carryForward ?? 0,
+        carryForwardPickup: activeRecord.carryForwardPickup ?? 0,
+        receivedDelivery: activeRecord.receivedDelivery ?? activeRecord.received ?? 0,
+        receivedPickup: activeRecord.receivedPickup ?? 0
+      });
+    } else {
+      // Auto carry forward logic from yesterday
+      const yesterday = new Date(new Date(activeDate).getTime() - 86400000).toISOString().split('T')[0];
+      const yesterdayRecord = allRecords.find(r => r.date === yesterday);
+      setHubForm({
+        carryForwardDelivery: yesterdayRecord ? (yesterdayRecord.totalPendingDelivery ?? yesterdayRecord.totalPending ?? 0) : 0,
+        carryForwardPickup: yesterdayRecord ? (yesterdayRecord.totalPendingPickup ?? 0) : 0,
+        receivedDelivery: 0,
+        receivedPickup: 0
+      });
+    }
+  }, [activeRecord, activeDate, allRecords]);
+
+  // Calculations for KPIs
+  const last7Days = useMemo(() => {
+    const todayStr = new Date().toISOString().split('T')[0];
+    return allRecords
+      .filter(r => r.date < todayStr)
+      .sort((a, b) => new Date(b.date) - new Date(a.date))
+      .slice(0, 7);
+  }, [allRecords]);
+
+  const avgReceived = useMemo(() => {
+    if (last7Days.length === 0) return 0;
+    const total = last7Days.reduce((sum, r) => sum + (r.received || 0), 0);
+    return Math.round(total / last7Days.length);
+  }, [last7Days]);
+
+  const avgSuccess = useMemo(() => {
+    if (last7Days.length === 0) return 0;
+    const totalAssigned = last7Days.reduce((sum, r) => sum + (r.totalAssigned || 0), 0);
+    const totalCompleted = last7Days.reduce((sum, r) => sum + (r.totalCompleted || 0), 0);
+    if (totalAssigned === 0) return 0;
+    return Math.round((totalCompleted / totalAssigned) * 100);
+  }, [last7Days]);
+
+  const totalParcelsDelivery = (Number(hubForm.carryForwardDelivery) || 0) + (Number(hubForm.receivedDelivery) || 0);
+  const totalParcelsPickup = (Number(hubForm.carryForwardPickup) || 0) + (Number(hubForm.receivedPickup) || 0);
+  const totalParcels = totalParcelsDelivery + totalParcelsPickup;
+
+  // Active Record Calculated Overalls
+  const currentRiders = activeRecord?.riders || [];
+  
+  const totalAssignedDelivery = currentRiders.reduce((sum, r) => sum + Number(r.assignedDelivery), 0);
+  const totalAssignedPickup = currentRiders.reduce((sum, r) => sum + Number(r.assignedPickup), 0);
+  const totalAssigned = totalAssignedDelivery + totalAssignedPickup;
+
+  const totalCompletedDelivery = currentRiders.reduce((sum, r) => sum + Number(r.completedDelivery), 0);
+  const totalCompletedPickup = currentRiders.reduce((sum, r) => sum + Number(r.completedPickup), 0);
+  const totalCompleted = totalCompletedDelivery + totalCompletedPickup;
+
+  const totalAmountCollected = currentRiders.reduce((sum, r) => sum + Number(r.amountCollected), 0);
+  const overallSuccessRate = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
+  
+  // Also calculate total pending parcels including the ones NOT assigned
+  const pendingDelivery = totalParcelsDelivery - totalCompletedDelivery;
+  const pendingPickup = totalParcelsPickup - totalCompletedPickup;
+  const overallCalculatedPending = pendingDelivery + pendingPickup;
+
+  // Handlers
+  const handleSaveHub = async () => {
+    const data = {
+      date: activeDate,
+      carryForwardDelivery: Number(hubForm.carryForwardDelivery),
+      carryForwardPickup: Number(hubForm.carryForwardPickup),
+      receivedDelivery: Number(hubForm.receivedDelivery),
+      receivedPickup: Number(hubForm.receivedPickup),
+      totalDelivery: totalParcelsDelivery,
+      totalPickup: totalParcelsPickup,
+      total: totalParcels,
+      totalAssigned,
+      totalCompleted,
+      totalPendingDelivery: pendingDelivery,
+      totalPendingPickup: pendingPickup,
+      totalPending: overallCalculatedPending, // Total Pending for next day
+      totalAmount: totalAmountCollected,
+      successRate: overallSuccessRate,
+      riders: currentRiders
+    };
+
     try {
-      if (editingHubId) {
-        await deliveryService.updateHubEntry(editingHubId, {
-          date: hubForm.date,
-          totalReceived: received
-        });
+      if (activeRecord) {
+        await deliveryService.updateDailyRecord(activeRecord.id, data);
+        toast.success("Daily Hub updated!");
       } else {
-        await deliveryService.addHubEntry({
-          date: hubForm.date,
-          totalReceived: received
-        });
+        await deliveryService.addDailyRecord(data);
+        toast.success("Daily Hub saved!");
       }
-      resetHubForm();
-      console.log('Hub entry added, closing modal');
-      setTimeout(() => {
-        toast.success(editingHubId ? 'Hub entry updated' : 'Hub entry added');
-      }, 0);
-    } catch (error) {
-      console.error('Error saving hub entry:', error);
-      toast.error('Failed to save hub entry');
+    } catch {
+      toast.error("Failed to save.");
     }
   };
 
   const handleRiderSubmit = async (e) => {
     e.preventDefault();
-    const assigned = Number(riderForm.assigned);
-    const delivered = Number(riderForm.delivered);
-    const income = delivered * rate;
+    const assignedDel = Number(riderForm.assignedDelivery);
+    const assignedPick = Number(riderForm.assignedPickup);
+    const compDel = Number(riderForm.completedDelivery);
+    const compPick = Number(riderForm.completedPickup);
+    const totalAss = assignedDel + assignedPick;
+    const totalComp = compDel + compPick;
     
-    try {
-      const entryData = {
-        ...riderForm,
-        assigned,
-        delivered,
-        pending: assigned - delivered,
-        income
-      };
+    const riderEntry = {
+      ...riderForm,
+      assignedDelivery: assignedDel,
+      assignedPickup: assignedPick,
+      completedDelivery: compDel,
+      completedPickup: compPick,
+      amountCollected: Number(riderForm.amountCollected),
+      failed: totalAss - totalComp,
+      successRate: totalAss > 0 ? Math.round((totalComp / totalAss) * 100) : 0
+    };
 
-      if (editingRiderId) {
-        await deliveryService.updateRiderEntry(editingRiderId, entryData);
+    let updatedRiders = [...currentRiders];
+    if (editingRiderIndex !== null) {
+      updatedRiders[editingRiderIndex] = riderEntry;
+    } else {
+      updatedRiders.push(riderEntry);
+    }
+
+    // Calc new totals
+    const newAssigned = updatedRiders.reduce((sum, r) => sum + r.assignedDelivery + r.assignedPickup, 0);
+    const newCompleted = updatedRiders.reduce((sum, r) => sum + r.completedDelivery + r.completedPickup, 0);
+    const newAmount = updatedRiders.reduce((sum, r) => sum + r.amountCollected, 0);
+
+    const recordData = {
+      date: activeDate,
+      carryForwardDelivery: Number(hubForm.carryForwardDelivery),
+      carryForwardPickup: Number(hubForm.carryForwardPickup),
+      receivedDelivery: Number(hubForm.receivedDelivery),
+      receivedPickup: Number(hubForm.receivedPickup),
+      totalDelivery: totalParcelsDelivery,
+      totalPickup: totalParcelsPickup,
+      total: totalParcels,
+      totalAssigned: newAssigned,
+      totalCompleted: newCompleted,
+      totalPendingDelivery: totalParcelsDelivery - updatedRiders.reduce((s, r)=>s+r.completedDelivery, 0),
+      totalPendingPickup: totalParcelsPickup - updatedRiders.reduce((s, r)=>s+r.completedPickup, 0),
+      totalPending: totalParcels - newCompleted,
+      totalAmount: newAmount,
+      successRate: newAssigned > 0 ? Math.round((newCompleted / newAssigned) * 100) : 0,
+      riders: updatedRiders
+    };
+
+    try {
+      if (activeRecord) {
+        await deliveryService.updateDailyRecord(activeRecord.id, recordData);
       } else {
-        await deliveryService.addRiderEntry(entryData);
+        await deliveryService.addDailyRecord(recordData);
       }
-      resetRiderForm();
-      console.log('Rider entry added, closing modal');
-      setTimeout(() => {
-        toast.success(editingRiderId ? 'Rider entry updated' : 'Rider entry added');
-      }, 0);
-    } catch (error) {
-      console.error('Error saving rider entry:', error);
-      toast.error('Failed to save rider entry');
+      toast.success(editingRiderIndex !== null ? "Rider updated" : "Rider assigned");
+      closeRiderModal();
+    } catch (err) {
+      console.error("Firestore Error:", err);
+      toast.error(`Failed to save rider entry: ${err.message || "Unknown error"}`);
     }
   };
 
-  const resetHubForm = () => {
-    setHubForm({
-      date: new Date().toISOString().split('T')[0],
-      received: ''
-    });
-    setEditingHubId(null);
-    setShowHubModal(false);
+  const deleteRider = async (index) => {
+    if (!window.confirm("Remove this rider entry?")) return;
+    let updatedRiders = [...currentRiders];
+    updatedRiders.splice(index, 1);
+    
+    const newAssigned = updatedRiders.reduce((sum, r) => sum + r.assignedDelivery + r.assignedPickup, 0);
+    const newCompleted = updatedRiders.reduce((sum, r) => sum + r.completedDelivery + r.completedPickup, 0);
+    const newAmount = updatedRiders.reduce((sum, r) => sum + r.amountCollected, 0);
+
+    const recordData = {
+      ...activeRecord,
+      totalAssigned: newAssigned,
+      totalCompleted: newCompleted,
+      totalPendingDelivery: totalParcelsDelivery - updatedRiders.reduce((s, r)=>s+r.completedDelivery, 0),
+      totalPendingPickup: totalParcelsPickup - updatedRiders.reduce((s, r)=>s+r.completedPickup, 0),
+      totalPending: totalParcels - newCompleted,
+      totalAmount: newAmount,
+      successRate: newAssigned > 0 ? Math.round((newCompleted / newAssigned) * 100) : 0,
+      riders: updatedRiders
+    };
+
+    try {
+      await deliveryService.updateDailyRecord(activeRecord.id, recordData);
+      toast.success("Rider entry removed");
+    } catch (err) {
+      console.error(err);
+      toast.error("Failed to remove rider");
+    }
   };
 
-  const resetRiderForm = () => {
-    setRiderForm({
-      riderId: '',
-      riderName: '',
-      date: new Date().toISOString().split('T')[0],
-      area: '',
-      assigned: '',
-      delivered: '',
-      notes: ''
-    });
-    setEditingRiderId(null);
-    setShowRiderModal(false);
-  };
-
-  const onRiderChange = (e) => {
-    const rider = riders.find(r => r.id === e.target.value);
-    setRiderForm({
-      ...riderForm,
-      riderId: e.target.value,
-      riderName: rider?.name || ''
-    });
-  };
-
-  const handleEditHub = (entry) => {
-    setHubForm({
-      date: entry.date,
-      received: entry.totalReceived
-    });
-    setEditingHubId(entry.id);
-    setShowHubModal(true);
-  };
-
-  const handleEditRider = (entry) => {
-    setRiderForm({
-      riderId: entry.riderId,
-      riderName: entry.riderName,
-      date: entry.date,
-      area: entry.area,
-      assigned: entry.assigned,
-      delivered: entry.delivered,
-      notes: entry.notes || ''
-    });
-    setEditingRiderId(entry.id);
+  const editRider = (rider, index) => {
+    setRiderForm({ ...rider });
+    setEditingRiderIndex(index);
     setShowRiderModal(true);
   };
 
-  const handleDeleteHub = async (id) => {
-    if (window.confirm('Delete this hub entry?')) {
-      try {
-        await deliveryService.deleteHubEntry(id);
-        toast.success('Hub entry deleted');
-      } catch (error) {
-        console.error('Error deleting hub entry:', error);
-        toast.error('Failed to delete hub entry');
-      }
-    }
-  };
-
-  const handleDeleteRider = async (id) => {
-    if (window.confirm('Delete this rider entry?')) {
-      try {
-        await deliveryService.deleteRiderEntry(id);
-        toast.success('Rider entry deleted');
-      } catch (error) {
-        console.error('Error deleting rider entry:', error);
-        toast.error('Failed to delete rider entry');
-      }
-    }
-  };
-
-  // Calculations
-  const calculatedHubEntries = useMemo(() => {
-    return hubEntries.map(hub => {
-      const relatedRiders = riderEntries.filter(re => re.date === hub.date);
-      const totalDelivered = relatedRiders.reduce((sum, re) => sum + Number(re.delivered), 0);
-      return {
-        ...hub,
-        delivered: totalDelivered,
-        pending: Number(hub.totalReceived) - totalDelivered
-      };
+  const closeRiderModal = () => {
+    setRiderForm({
+      riderId: '',
+      riderName: '',
+      assignedDelivery: 0,
+      assignedPickup: 0,
+      completedDelivery: 0,
+      completedPickup: 0,
+      amountCollected: 0
     });
-  }, [hubEntries, riderEntries]);
+    setEditingRiderIndex(null);
+    setShowRiderModal(false);
+  };
 
-  const stats = useMemo(() => {
-    const today = new Date().toISOString().split('T')[0];
-    const todayHub = calculatedHubEntries.filter(e => e.date === today);
-    const todayRiders = riderEntries.filter(e => e.date === today);
-    
-    const received = todayHub.reduce((sum, e) => sum + Number(e.totalReceived), 0);
-    const delivered = todayRiders.reduce((sum, e) => sum + Number(e.delivered), 0);
-    
-    return {
-      received,
-      delivered,
-      pending: received - delivered
-    };
-  }, [calculatedHubEntries, riderEntries]);
-
-  const filteredHubEntries = calculatedHubEntries.filter(entry => 
-    entry.date?.includes(hubSearch)
-  ).sort((a, b) => new Date(b.date) - new Date(a.date));
-
-  const filteredRiderEntries = riderEntries.filter(entry => 
-    entry.riderName?.toLowerCase().includes(riderSearch.toLowerCase()) ||
-    entry.area?.toLowerCase().includes(riderSearch.toLowerCase())
-  ).sort((a, b) => new Date(b.date) - new Date(a.date));
+  const shareWhatsApp = () => {
+    const text = `*Win Express – Daily Report*\n\nDate: ${activeDate}\n\n*Riders:*\n${currentRiders.map(r => `${r.riderName} | Assigned: ${r.assignedDelivery}(D)+${r.assignedPickup}(P) | Completed: ${r.completedDelivery}(D)+${r.completedPickup}(P)`).join('\n')}\n\n*Total:*\nAssigned: ${totalAssignedDelivery}(D)+${totalAssignedPickup}(P)\nCompleted: ${totalCompletedDelivery}(D)+${totalCompletedPickup}(P)\nPending: ${pendingDelivery}(D)+${pendingPickup}(P)\nAmount Collected: ₹${totalAmountCollected}\nSuccess Rate: ${overallSuccessRate}%`;
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
 
   return (
-    <div className="flex flex-col gap-8 pb-10">
-      
+    <div className="flex flex-col gap-6 pb-12">
       {/* ─── Header Section ─── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
         <div>
           <h2 className="text-3xl font-extrabold tracking-tight text-gray-900 dark:text-white">
             Delivery Operations
           </h2>
-          <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400 max-w-md">
-            Monitor hub intake and track rider performance across all delivery zones.
+          <p className="mt-1 flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+            Control Dashboard for <input type="date" value={activeDate} onChange={(e) => {setActiveDate(e.target.value); setActiveTab('daily');}} className="bg-transparent border-b border-gray-300 dark:border-gray-700 outline-none font-bold text-primary cursor-pointer"/>
           </p>
         </div>
         
-        {/* Tab Switcher - Premium Style */}
-        <div className="flex p-1.5 bg-gray-100 dark:bg-gray-800/80 rounded-2xl shadow-inner border border-gray-200/50 dark:border-gray-700/50 backdrop-blur-md self-start md:self-center">
+        <div className="flex p-1 bg-gray-100 dark:bg-gray-800 rounded-xl shadow-inner border border-gray-200 dark:border-gray-700">
           <button
-            onClick={() => setActiveTab('hub')}
-            className={`relative px-6 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
-              activeTab === 'hub'
-                ? 'text-white shadow-lg'
-                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+            onClick={() => setActiveTab('daily')}
+            className={`flex items-center gap-2 px-5 py-2 text-sm font-bold rounded-lg transition-all ${
+              activeTab === 'daily' ? 'bg-white dark:bg-gray-700 text-primary shadow-sm' : 'text-gray-500'
             }`}
           >
-            {activeTab === 'hub' && (
-              <motion.div
-                layoutId="activeTab"
-                className="absolute inset-0 bg-primary rounded-xl"
-                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-              />
-            )}
-            <span className="relative z-10">Hub Entry</span>
+            <LayoutDashboard size={16} /> Dashboard
           </button>
           <button
-            onClick={() => setActiveTab('rider')}
-            className={`relative px-6 py-2.5 text-sm font-bold rounded-xl transition-all duration-300 outline-none focus-visible:ring-2 focus-visible:ring-primary/50 ${
-              activeTab === 'rider'
-                ? 'text-white shadow-lg'
-                : 'text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white'
+            onClick={() => setActiveTab('history')}
+            className={`flex items-center gap-2 px-5 py-2 text-sm font-bold rounded-lg transition-all ${
+              activeTab === 'history' ? 'bg-white dark:bg-gray-700 text-primary shadow-sm' : 'text-gray-500'
             }`}
           >
-            {activeTab === 'rider' && (
-              <motion.div
-                layoutId="activeTab"
-                className="absolute inset-0 bg-primary rounded-xl"
-                transition={{ type: "spring", bounce: 0.2, duration: 0.6 }}
-              />
-            )}
-            <span className="relative z-10">Rider Entry</span>
+            <History size={16} /> History
           </button>
         </div>
       </div>
 
-      {/* ─── Today's Pulse ─── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <PulseCard 
-          icon={<Truck size={22} />}
-          label="Today Received"
-          value={stats.received}
-          color="blue"
-          theme={theme}
-        />
-        <PulseCard 
-          icon={<CheckCircle2 size={22} />}
-          label="Today Delivered"
-          value={stats.delivered}
-          color="emerald"
-          theme={theme}
-        />
-        <PulseCard 
-          icon={<AlertCircle size={22} />}
-          label="Pending Dispatch"
-          value={stats.pending}
-          color="amber"
-          theme={theme}
-        />
-      </div>
-
-      {/* ─── Main Content Area ─── */}
-      <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden ring-1 ring-black/5 dark:ring-white/5">
-        
-        {/* Actions Bar */}
-        <div className="p-6 border-b border-gray-200 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="relative group flex-1 max-w-md">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 group-focus-within:text-primary transition-colors" />
-            <input 
-              type="text" 
-              placeholder={activeTab === 'hub' ? "Search date (YYYY-MM-DD)..." : "Search rider or area..."}
-              className="w-full pl-11 pr-4 py-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl text-sm outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all text-gray-900 dark:text-white"
-              value={activeTab === 'hub' ? hubSearch : riderSearch}
-              onChange={(e) => activeTab === 'hub' ? setHubSearch(e.target.value) : setRiderSearch(e.target.value)}
-            />
+      {activeTab === 'daily' ? (
+        <>
+          {/* 1. KPI CARDS */}
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <KPICard title="Total Parcels" value={totalParcels} color="from-indigo-50 to-white dark:from-indigo-900/30 dark:to-transparent" textColor="text-indigo-600 dark:text-indigo-400" />
+            <KPICard title="Carry Forward" value={(Number(hubForm.carryForwardDelivery)||0) + (Number(hubForm.carryForwardPickup)||0)} color="from-rose-50 to-white dark:from-rose-900/30 dark:to-transparent" textColor="text-rose-600 dark:text-rose-400" />
+            <KPICard title="Received Today" value={(Number(hubForm.receivedDelivery)||0) + (Number(hubForm.receivedPickup)||0)} color="from-emerald-50 to-white dark:from-emerald-900/30 dark:to-transparent" textColor="text-emerald-600 dark:text-emerald-400" />
+            <KPICard title="Avg Received (7d)" value={avgReceived} color="from-blue-50 to-white dark:from-blue-900/30 dark:to-transparent" textColor="text-blue-600 dark:text-blue-400" />
+            <KPICard title="Avg Success % (7d)" value={`${avgSuccess}%`} color="from-amber-50 to-white dark:from-amber-900/30 dark:to-transparent" textColor="text-amber-600 dark:text-amber-400" />
           </div>
-          
-          <button 
-            onClick={() => activeTab === 'hub' ? setShowHubModal(true) : setShowRiderModal(true)}
-            className="flex items-center justify-center gap-2 px-6 py-3 bg-primary hover:bg-primary-hover text-white rounded-2xl font-bold shadow-lg shadow-primary/25 transition-all active:scale-95"
-          >
-            <Plus size={18} strokeWidth={3} />
-            Add {activeTab === 'hub' ? 'Hub Entry' : 'Rider Entry'}
-          </button>
-        </div>
 
-        {/* Dynamic Table / Card List */}
-        <div className="overflow-x-auto min-h-[400px]">
-          {activeTab === 'hub' ? (
-            <HubTable 
-              entries={filteredHubEntries} 
-              onEdit={handleEditHub} 
-              onDelete={handleDeleteHub}
-              theme={theme}
-            />
-          ) : (
-            <RiderTable 
-              entries={filteredRiderEntries} 
-              onEdit={handleEditRider} 
-              onDelete={handleDeleteRider}
-              theme={theme}
-            />
-          )}
-        </div>
-      </div>
-
-      {/* ─── Modals ─── */}
-      <AnimatePresence>
-        {showHubModal && (
-          <Modal title={editingHubId ? "Edit Hub Entry" : "New Hub Entry"} onClose={resetHubForm} theme={theme}>
-            <form onSubmit={handleHubSubmit} className="space-y-5">
-              <FormField label="Arrival Date" icon={<Calendar size={14}/>} theme={theme}>
-                <input 
-                  type="date" 
-                  value={hubForm.date}
-                  onChange={(e) => setHubForm({ ...hubForm, date: e.target.value })}
-                  className={inputClasses(theme)}
-                  required
-                />
-              </FormField>
-              <FormField label="Total Parcles Received" icon={<Truck size={14}/>} theme={theme}>
-                <input 
-                  type="number" 
-                  placeholder="e.g. 150" 
-                  value={hubForm.received}
-                  onChange={(e) => setHubForm({ ...hubForm, received: e.target.value })}
-                  className={inputClasses(theme)}
-                  required
-                />
-              </FormField>
-              <button type="submit" className={submitClasses}>
-                {editingHubId ? 'Update Record' : 'Log Arrival'}
-              </button>
-            </form>
-          </Modal>
-        )}
-
-        {showRiderModal && (
-          <Modal title={editingRiderId ? "Edit Delivery" : "New Delivery Entry"} onClose={resetRiderForm} theme={theme}>
-            <form onSubmit={handleRiderSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
-                 <FormField label="Rider" icon={<User size={14}/>} theme={theme}>
-                   <select 
-                     className={inputClasses(theme)}
-                     value={riderForm.riderId}
-                     onChange={onRiderChange}
-                     required
-                   >
-                     <option value="">Select Rider</option>
-                     {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                   </select>
-                 </FormField>
-                 <FormField label="Date" icon={<Calendar size={14}/>} theme={theme}>
-                   <input 
-                     type="date" 
-                     className={inputClasses(theme)}
-                     value={riderForm.date}
-                     onChange={(e) => setRiderForm({ ...riderForm, date: e.target.value })}
-                     required
-                   />
-                 </FormField>
-              </div>
+          {/* 2. DAILY HUB SUMMARY (Small compact layout) */}
+          <div className="bg-white dark:bg-gray-900/40 rounded-2xl p-4 border border-gray-200 dark:border-gray-800 shadow-sm flex flex-col xl:flex-row gap-4 xl:items-end justify-between">
+            <div className="flex flex-wrap gap-4 items-center flex-1">
+              <h3 className="text-sm font-black text-gray-900 dark:text-white flex items-center gap-1.5 whitespace-nowrap min-w-[140px]">
+                <Calendar size={16} className="text-primary"/> Hub Input
+              </h3>
               
-              <FormField label="Delivery Area" icon={<MapPin size={14}/>} theme={theme}>
-                <input 
-                  placeholder="e.g. Downtown / North Block" 
-                  className={inputClasses(theme)}
-                  value={riderForm.area}
-                  onChange={(e) => setRiderForm({ ...riderForm, area: e.target.value })}
-                  required
-                />
-              </FormField>
-
-              <div className="grid grid-cols-2 gap-4">
-                <FormField label="Assigned" theme={theme}>
-                  <input 
-                    type="number" 
-                    placeholder="0" 
-                    className={inputClasses(theme)}
-                    value={riderForm.assigned}
-                    onChange={(e) => setRiderForm({ ...riderForm, assigned: e.target.value })}
-                    required
-                  />
-                </FormField>
-                <FormField label="Delivered" theme={theme}>
-                  <input 
-                    type="number" 
-                    placeholder="0" 
-                    className={inputClasses(theme)}
-                    value={riderForm.delivered}
-                    onChange={(e) => setRiderForm({ ...riderForm, delivered: e.target.value })}
-                    required
-                  />
-                </FormField>
+              <div className="flex flex-wrap gap-4">
+                <InputColumn label="CF (Del)" val={hubForm.carryForwardDelivery} onChange={v => setHubForm({...hubForm, carryForwardDelivery: v})} />
+                <InputColumn label="CF (Pick)" val={hubForm.carryForwardPickup} onChange={v => setHubForm({...hubForm, carryForwardPickup: v})} />
+                <InputColumn label="Rec (Del)" val={hubForm.receivedDelivery} onChange={v => setHubForm({...hubForm, receivedDelivery: v})} />
+                <InputColumn label="Rec (Pick)" val={hubForm.receivedPickup} onChange={v => setHubForm({...hubForm, receivedPickup: v})} />
               </div>
 
-              <FormField label="Special Notes" theme={theme}>
-                <textarea 
-                  rows={2}
-                  placeholder="Optional delivery details..." 
-                  className={inputClasses(theme)}
-                  value={riderForm.notes}
-                  onChange={(e) => setRiderForm({ ...riderForm, notes: e.target.value })}
-                />
-              </FormField>
+              <div className="flex gap-4 items-center ml-2 border-l border-gray-200 dark:border-gray-700 pl-4">
+                <FooterStat label="Total Del" value={totalParcelsDelivery} valueColor="text-gray-700 dark:text-gray-300" />
+                <FooterStat label="Total Pick" value={totalParcelsPickup} valueColor="text-gray-700 dark:text-gray-300" />
+              </div>
+            </div>
 
-              <button type="submit" className={submitClasses}>
-                {editingRiderId ? 'Update Delivery' : 'Assign Delivery'}
+            <div className="flex gap-2 min-w-max">
+              <button onClick={handleSaveHub} className="flex-1 flex items-center justify-center gap-2 bg-primary hover:bg-primary-hover text-white px-5 py-2.5 xl:py-2 rounded-xl font-bold transition-all active:scale-[0.98] shadow-sm text-sm">
+                 <Save size={16}/> Save Hub
               </button>
-            </form>
-          </Modal>
+              {activeRecord && currentRiders.length > 0 && (
+                 <button onClick={shareWhatsApp} className="flex-none flex items-center justify-center gap-2 bg-[#25D366] hover:bg-[#1ebd5a] text-white px-4 py-2.5 xl:py-2 rounded-xl font-bold transition-all active:scale-[0.98] shadow-sm text-sm">
+                    <Share2 size={16}/> 
+                 </button>
+              )}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            
+            {/* 4. RIDER PERFORMANCE & 5. OVERALL SUMMARY */}
+            <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden flex flex-col">
+              
+              <div className="p-5 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/30">
+                <h3 className="font-black text-gray-900 dark:text-white">Rider PerformanceMetrics</h3>
+                <button onClick={() => setShowRiderModal(true)} className="flex items-center gap-2 bg-primary/10 hover:bg-primary/20 text-primary px-4 py-2 rounded-lg font-bold transition-all text-sm">
+                  <Plus size={16}/> Add Rider Role
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-[11px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500">
+                      <th className="px-5 py-4">Rider</th>
+                      <th className="px-5 py-4 text-center">Assigned (D/P)</th>
+                      <th className="px-5 py-4 text-center">Completed (D/P)</th>
+                      <th className="px-5 py-4 text-center">Failed</th>
+                      <th className="px-5 py-4 text-center">Ratio</th>
+                      <th className="px-5 py-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
+                    {currentRiders.length === 0 ? (
+                       <tr><td colSpan="6" className="py-12 text-center text-gray-400 font-medium">No riders assigned for this date.</td></tr>
+                    ) : currentRiders.map((r, i) => {
+                      const tAssigned = Number(r.assignedDelivery) + Number(r.assignedPickup);
+                      const tCompleted = Number(r.completedDelivery) + Number(r.completedPickup);
+                      const tFailed = r.failed;
+                      const ratio = r.successRate;
+                      let ringColor = 'ring-rose-500 text-rose-600 bg-rose-50 dark:bg-rose-500/10';
+                      if (ratio >= 90) ringColor = 'ring-emerald-500 text-emerald-600 bg-emerald-50 dark:bg-emerald-500/10';
+                      else if (ratio >= 80) ringColor = 'ring-amber-500 text-amber-600 bg-amber-50 dark:bg-amber-500/10';
+
+                      return (
+                        <tr key={i} className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                          <td className="px-5 py-4 font-bold text-gray-900 dark:text-white">{r.riderName}</td>
+                          <td className="px-5 py-4 text-center font-mono font-medium">
+                            {r.assignedDelivery} <span className="text-gray-300 dark:text-gray-600">/</span> {r.assignedPickup}
+                          </td>
+                          <td className="px-5 py-4 text-center font-mono font-bold text-emerald-600">
+                            {r.completedDelivery} <span className="text-emerald-300 dark:text-emerald-800">/</span> {r.completedPickup}
+                          </td>
+                          <td className="px-5 py-4 text-center font-mono font-bold text-rose-500">{tFailed}</td>
+                          <td className="px-5 py-4 text-center">
+                            <span className={`px-2 py-1 rounded-md text-[11px] font-black ring-1 ring-inset ${ringColor}`}>
+                              {ratio}%
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-right">
+                            <div className="flex justify-end gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button onClick={() => editRider(r, i)} className="p-1.5 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg">
+                                <Edit2 size={14}/>
+                              </button>
+                              <button onClick={() => deleteRider(i)} className="p-1.5 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg">
+                                <Trash2 size={14}/>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* OVERALL SUMMARY FOOTER */}
+              <div className="bg-gray-100 dark:bg-gray-800 p-5 mt-auto grid grid-cols-2 md:grid-cols-5 gap-4">
+                <FooterStat label="Assignments (D/P)" value={`${totalAssignedDelivery}/${totalAssignedPickup}`} />
+                <FooterStat label="Completed (D/P)" value={`${totalCompletedDelivery}/${totalCompletedPickup}`} />
+                <FooterStat label="Pending (D/P)" value={`${pendingDelivery}/${pendingPickup}`} />
+                <FooterStat label="Amount" value={`₹${totalAmountCollected}`} valueColor="text-emerald-600 dark:text-emerald-400" />
+                <FooterStat label="Success %" value={`${overallSuccessRate}%`} valueColor={overallSuccessRate >= 90 ? 'text-emerald-600' : overallSuccessRate >= 80 ? 'text-amber-500' : 'text-rose-500'} />              </div>
+
+            </div>
+          </div>
+        </>
+      ) : (
+        /* 6. HISTORY VIEW */
+        <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
+          <div className="overflow-x-auto">
+             <table className="w-full border-collapse text-sm">
+               <thead>
+                 <tr className="bg-gray-50 dark:bg-gray-800 uppercase text-[11px] tracking-wider text-gray-500 font-bold border-b border-gray-200 dark:border-gray-700 text-left">
+                   <th className="px-6 py-4">Date</th>
+                   <th className="px-6 py-4">Assigned</th>
+                   <th className="px-6 py-4">Completed</th>
+                   <th className="px-6 py-4">Pending</th>
+                   <th className="px-6 py-4">Collection</th>
+                   <th className="px-6 py-4">Success Rate</th>
+                   <th className="px-6 py-4"></th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                 {allRecords.map(r => (
+                   <tr key={r.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                     <td className="px-6 py-4 font-bold flex items-center gap-2">
+                       <Calendar size={14} className="text-primary"/> {r.date}
+                     </td>
+                     <td className="px-6 py-4 font-mono font-medium">{r.totalAssigned || 0}</td>
+                     <td className="px-6 py-4 font-mono font-bold text-emerald-600">{r.totalCompleted || 0}</td>
+                     <td className="px-6 py-4 font-mono font-bold text-rose-500">{r.totalPending || 0}</td>
+                     <td className="px-6 py-4 font-bold text-primary">₹{(r.totalAmount || 0).toLocaleString()}</td>
+                     <td className="px-6 py-4 font-bold text-blue-600">{r.successRate || 0}%</td>
+                     <td className="px-6 py-4 text-right">
+                       <button onClick={() => { setActiveDate(r.date); setActiveTab('daily'); }} className="text-xs font-bold text-primary bg-primary/10 px-3 py-1.5 rounded-lg hover:bg-primary/20">
+                         View Details
+                       </button>
+                     </td>
+                   </tr>
+                 ))}
+                 {allRecords.length === 0 && (
+                   <tr><td colSpan="7" className="p-8 text-center text-gray-400">No records found.</td></tr>
+                 )}
+               </tbody>
+             </table>
+          </div>
+        </div>
+      )}
+
+      {/* 3. RIDER MODAL */}
+      <AnimatePresence>
+        {showRiderModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closeRiderModal} className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+            <motion.div initial={{ opacity: 0, scale: 0.95, y: 10 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 10 }} className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-[24px] shadow-2xl overflow-hidden border border-white/10 dark:border-gray-800">
+              <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
+                <h3 className="text-xl font-black">{editingRiderIndex !== null ? 'Update Rider' : 'Assign Rider'}</h3>
+                <button onClick={closeRiderModal} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-rose-100 hover:text-rose-600 transition-colors"><X size={16}/></button>
+              </div>
+              <form onSubmit={handleRiderSubmit} className="p-6 space-y-4">
+                <div className="space-y-1.5">
+                  <label className="text-xs font-bold uppercase text-gray-500">Select Rider</label>
+                  <select 
+                     className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none"
+                     required
+                     value={riderForm.riderId}
+                     onChange={(e) => {
+                       const sel = riders.find(r => r.id === e.target.value);
+                       setRiderForm({...riderForm, riderId: e.target.value, riderName: sel?.name || ''});
+                     }}
+                  >
+                    <option value="">-- Choose Rider --</option>
+                    {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                    <h4 className="text-xs font-black text-blue-800 dark:text-blue-400 mb-3 uppercase flex items-center gap-1"><Truck size={12}/> Assigned</h4>
+                    <div className="space-y-3">
+                       <InputRow label="Delivery" val={riderForm.assignedDelivery} onChange={v => setRiderForm({...riderForm, assignedDelivery: v})} />
+                       <InputRow label="Pickup" val={riderForm.assignedPickup} onChange={v => setRiderForm({...riderForm, assignedPickup: v})} />
+                    </div>
+                  </div>
+                  <div className="p-4 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100 dark:border-emerald-900/30">
+                    <h4 className="text-xs font-black text-emerald-800 dark:text-emerald-400 mb-3 uppercase flex items-center gap-1"><CheckCircle2 size={12}/> Completed</h4>
+                    <div className="space-y-3">
+                       <InputRow label="Delivery" val={riderForm.completedDelivery} onChange={v => setRiderForm({...riderForm, completedDelivery: v})} />
+                       <InputRow label="Pickup" val={riderForm.completedPickup} onChange={v => setRiderForm({...riderForm, completedPickup: v})} />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <label className="text-xs font-bold uppercase text-gray-500">Amount Collected (COD + UPI)</label>
+                  <div className="relative mt-1">
+                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
+                    <input 
+                      type="number" 
+                      value={riderForm.amountCollected}
+                      onChange={e => setRiderForm({...riderForm, amountCollected: e.target.value})}
+                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-8 pr-4 py-3 outline-none font-mono font-bold"
+                    />
+                  </div>
+                </div>
+                
+                <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-xl flex items-center justify-between mt-4">
+                  <span className="text-xs font-bold text-gray-500">Auto Calc Failed:</span>
+                  <span className="font-mono font-black text-rose-500">
+                    {Math.max(0, (Number(riderForm.assignedDelivery) + Number(riderForm.assignedPickup)) - (Number(riderForm.completedDelivery) + Number(riderForm.completedPickup)))}
+                  </span>
+                </div>
+
+                <button type="submit" className="w-full bg-primary hover:bg-primary-hover text-white py-3.5 rounded-xl font-black mt-4 shadow-lg shadow-primary/30 transition-all active:scale-[0.98]">
+                  {editingRiderIndex !== null ? 'Save Changes' : 'Assign Rider'}
+                </button>
+              </form>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
+
     </div>
   );
 }
 
-/* ─── UI Components ─── */
-
-function PulseCard({ icon, label, value, color, theme }) {
-  const colors = {
-    blue: "from-blue-500/20 to-blue-600/5 text-blue-600 border-blue-200 dark:border-blue-800",
-    emerald: "from-emerald-500/20 to-emerald-600/5 text-emerald-600 border-emerald-200 dark:border-emerald-800",
-    amber: "from-amber-500/20 to-amber-600/5 text-amber-600 border-amber-200 dark:border-amber-800",
-  };
-
+/* ─── Helpert UI Components ─── */
+function KPICard({ title, value, color, textColor }) {
   return (
-    <div className={`p-5 rounded-3xl bg-gradient-to-br ${colors[color]} border shadow-sm`}>
-      <div className="flex items-center gap-3">
-        <div className="p-2.5 rounded-2xl bg-white dark:bg-gray-900 shadow-sm ring-1 ring-black/5">
-          {icon}
-        </div>
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-wider opacity-70">
-            {label}
-          </p>
-          <p className="text-2xl font-black tabular-nums">
-            {value}
-          </p>
-        </div>
-      </div>
+    <div className={`p-4 rounded-2xl bg-gradient-to-br ${color} border border-gray-100 dark:border-gray-800 shadow-sm flex flex-col justify-center`}>
+      <p className="text-[10px] font-black uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1">{title}</p>
+      <p className={`text-2xl font-black ${textColor} tabular-nums`}>{value}</p>
     </div>
   );
 }
 
-function HubTable({ entries, onEdit, onDelete, theme }) {
+function InputRow({ label, val, onChange }) {
   return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr className="bg-gray-50/50 dark:bg-gray-800/20 text-[11px] uppercase tracking-widest font-bold text-gray-500 dark:text-gray-400">
-          <th className="px-6 py-4 text-left">Date</th>
-          <th className="px-6 py-4 text-left">Received</th>
-          <th className="px-6 py-4 text-left">Success</th>
-          <th className="px-6 py-4 text-left">Pending</th>
-          <th className="px-6 py-4 text-right">Action</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-        {entries.map(e => (
-          <tr key={e.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-            <td className="px-6 py-5">
-               <div className="flex items-center gap-3">
-                 <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
-                    <Calendar size={14}/>
-                 </div>
-                 <span className="font-semibold text-gray-900 dark:text-gray-200">{e.date}</span>
-               </div>
-            </td>
-            <td className="px-6 py-5 font-mono text-gray-700 dark:text-gray-300">{e.totalReceived}</td>
-            <td className="px-6 py-5">
-               <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold">
-                 <CheckCircle2 size={14}/>
-                 {e.delivered}
-               </div>
-            </td>
-            <td className="px-6 py-5">
-               <span className={`px-2.5 py-1 rounded-full text-xs font-bold ${
-                 e.pending <= 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-               }`}>
-                 {e.pending} left
-               </span>
-            </td>
-            <td className="px-6 py-5 text-right">
-               <div className="flex justify-end gap-1 opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity">
-                 <button onClick={() => onEdit(e)} className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
-                   <Edit2 size={16}/>
-                 </button>
-                 <button onClick={() => onDelete(e.id)} className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors">
-                   <Trash2 size={16}/>
-                 </button>
-               </div>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function RiderTable({ entries, onEdit, onDelete, theme }) {
-  return (
-    <table className="w-full border-collapse">
-      <thead>
-        <tr className="bg-gray-50/50 dark:bg-gray-800/20 text-[11px] uppercase tracking-widest font-bold text-gray-500 dark:text-gray-400">
-          <th className="px-6 py-4 text-left">Rider & Area</th>
-          <th className="px-6 py-4 text-left">Date</th>
-          <th className="px-6 py-4 text-left">Assigned</th>
-          <th className="px-6 py-4 text-left">Delivered</th>
-          <th className="px-6 py-4 text-right">Action</th>
-        </tr>
-      </thead>
-      <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-        {entries.map(e => (
-          <tr key={e.id} className="group hover:bg-gray-50 dark:hover:bg-gray-800/30 transition-colors">
-            <td className="px-6 py-5">
-               <div className="flex flex-col">
-                 <span className="font-bold text-gray-900 dark:text-gray-100">{e.riderName}</span>
-                 <div className="flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400">
-                   <MapPin size={10}/>
-                   {e.area}
-                 </div>
-               </div>
-            </td>
-            <td className="px-6 py-5 text-sm text-gray-600 dark:text-gray-400">{e.date}</td>
-            <td className="px-6 py-5 font-mono font-medium text-blue-600 dark:text-blue-400">{e.assigned}</td>
-            <td className="px-6 py-5">
-               <div className="flex items-center gap-1.5">
-                 <div className="w-full bg-gray-200 dark:bg-gray-700 h-1.5 rounded-full overflow-hidden min-w-[60px]">
-                   <div 
-                     className="h-full bg-emerald-500 rounded-full" 
-                     style={{ width: `${Math.min(100, (e.delivered / (e.assigned || 1)) * 100)}%` }}
-                   />
-                 </div>
-                 <span className="text-xs font-bold text-emerald-600">{e.delivered}</span>
-               </div>
-            </td>
-            <td className="px-6 py-5 text-right">
-               <div className="flex justify-end gap-1">
-                 <button onClick={() => onEdit(e)} className="p-2 text-gray-400 hover:text-primary hover:bg-primary/10 rounded-lg transition-colors">
-                   <Edit2 size={16}/>
-                 </button>
-                 <button onClick={() => onDelete(e.id)} className="p-2 text-gray-400 hover:text-rose-500 hover:bg-rose-100/50 rounded-lg transition-colors">
-                   <Trash2 size={16}/>
-                 </button>
-               </div>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function Modal({ title, onClose, children, theme }) {
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-      <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
-        onClick={onClose}
-        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+    <div className="flex items-center justify-between gap-2">
+      <span className="text-xs font-bold text-gray-600 dark:text-gray-300">{label}</span>
+      <input 
+        type="number" 
+        value={val} 
+        onChange={e => onChange(e.target.value)} 
+        className="w-20 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 text-center font-mono text-sm outline-none focus:border-primary"
       />
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
-        exit={{ opacity: 0, scale: 0.9, y: 20 }}
-        className="relative w-full max-w-lg bg-white dark:bg-gray-900 rounded-[32px] shadow-2xl border border-white/20 dark:border-gray-800 overflow-hidden"
-      >
-        <div className="px-8 pt-8 pb-4 flex items-center justify-between">
-          <h3 className="text-2xl font-black text-gray-900 dark:text-white leading-tight">
-            {title}
-          </h3>
-          <button 
-            onClick={onClose}
-            className="p-2 rounded-full bg-gray-100 dark:bg-gray-800 text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
-          >
-            <X size={20}/>
-          </button>
-        </div>
-        <div className="px-8 pb-10">
-          {children}
-        </div>
-      </motion.div>
     </div>
   );
 }
 
-function FormField({ label, icon, children, theme }) {
+function FooterStat({ label, value, valueColor = 'text-gray-900 dark:text-white' }) {
   return (
-    <div className="space-y-1.5">
-      <label className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-gray-400 dark:text-gray-500 ml-1">
-        {icon}
-        {label}
-      </label>
-      {children}
+    <div>
+      <p className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">{label}</p>
+      <p className={`text-xl font-black tabular-nums ${valueColor}`}>{value}</p>
     </div>
   );
 }
 
-const inputClasses = (theme) => `
-  w-full px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 
-  rounded-2xl text-sm font-medium outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary 
-  transition-all text-gray-900 dark:text-white placeholder:text-gray-400
-`;
-
-const submitClasses = `
-  w-full py-4 bg-primary hover:bg-primary-hover text-white rounded-2xl font-black 
-  shadow-xl shadow-primary/30 transition-all active:scale-[0.98] mt-4
-`;
+function InputColumn({ label, val, onChange }) {
+  return (
+    <div className="flex flex-col gap-1 w-[70px]">
+      <label className="text-[9px] font-bold uppercase tracking-wider text-gray-500 whitespace-nowrap">{label}</label>
+      <input 
+        type="number" 
+        value={val} 
+        onChange={e => onChange(e.target.value)}
+        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg px-2 py-1.5 outline-none focus:border-primary font-mono font-bold text-sm text-center shadow-inner"
+      />
+    </div>
+  );
+}

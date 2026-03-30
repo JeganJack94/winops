@@ -14,6 +14,7 @@ import {
 
 const HUB_COLLECTION = 'hub_entries';
 const RIDER_ENTRY_COLLECTION = 'rider_entries';
+const DAILY_RECORDS_COLLECTION = 'daily_records';
 
 export const deliveryService = {
   // Hub Entries
@@ -82,6 +83,37 @@ export const deliveryService = {
     if (riderId) {
       q = query(q, where('riderId', '==', riderId));
     }
+    return onSnapshot(q, (snapshot) => {
+      const entries = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      callback(entries);
+    });
+  },
+
+  // Daily Records
+  addDailyRecord: async (data) => {
+    return await addDoc(collection(db, DAILY_RECORDS_COLLECTION), {
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  updateDailyRecord: async (id, data) => {
+    return await updateDoc(doc(db, DAILY_RECORDS_COLLECTION, id), data);
+  },
+
+  deleteDailyRecord: async (id) => {
+    return await deleteDoc(doc(db, DAILY_RECORDS_COLLECTION, id));
+  },
+
+  subscribeToDailyRecords: (callback, limitCount = 30) => {
+    const q = query(
+      collection(db, DAILY_RECORDS_COLLECTION),
+      orderBy('date', 'desc'),
+      limit(limitCount)
+    );
     return onSnapshot(q, (snapshot) => {
       const entries = snapshot.docs.map(doc => ({
         id: doc.id,

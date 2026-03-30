@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Truck, FileBarChart, PieChart, Settings, Menu, ChevronLeft } from 'lucide-react';
+import { LayoutDashboard, Receipt, Truck, IndianRupee, FileBarChart, PieChart, Settings, Menu, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const navigation = [
   { name: 'Dashboard', to: '/', icon: LayoutDashboard },
   { name: 'Expenses', to: '/expenses', icon: Receipt },
   { name: 'Delivery', to: '/delivery', icon: Truck },
+  { name: 'Earnings', to: '/earnings', icon: IndianRupee },
   { name: 'Reports', to: '/reports', icon: FileBarChart },
   { name: 'Analytics', to: '/analytics', icon: PieChart },
   { name: 'Settings', to: '/settings', icon: Settings },

@@ -15,12 +15,15 @@ export default defineConfig({
         name: 'Win Express Ops',
         short_name: 'WinOps',
         description: 'Track, monitor, and analyze delivery operations for Win Express logistics.',
+        display: 'standalone',
         theme_color: '#F97316',
+        background_color: '#ffffff',
         icons: [
           {
             src: 'pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/png'
+            type: 'image/png',
+            purpose: 'any maskable'
           },
           {
             src: 'pwa-512x512.png',
