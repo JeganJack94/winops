@@ -23,7 +23,9 @@ export default function Delivery() {
     carryForwardDelivery: 0, 
     carryForwardPickup: 0, 
     receivedDelivery: 0, 
-    receivedPickup: 0 
+    receivedPickup: 0,
+    rtoDelivery: 0,
+    cancelDelivery: 0
   });
 
   // Modal States
@@ -63,7 +65,9 @@ export default function Delivery() {
         carryForwardDelivery: activeRecord.carryForwardDelivery ?? activeRecord.carryForward ?? 0,
         carryForwardPickup: activeRecord.carryForwardPickup ?? 0,
         receivedDelivery: activeRecord.receivedDelivery ?? activeRecord.received ?? 0,
-        receivedPickup: activeRecord.receivedPickup ?? 0
+        receivedPickup: activeRecord.receivedPickup ?? 0,
+        rtoDelivery: activeRecord.rtoDelivery ?? 0,
+        cancelDelivery: activeRecord.cancelDelivery ?? 0
       });
     } else {
       // Auto carry forward logic from yesterday
@@ -73,7 +77,9 @@ export default function Delivery() {
         carryForwardDelivery: yesterdayRecord ? (yesterdayRecord.totalPendingDelivery ?? yesterdayRecord.totalPending ?? 0) : 0,
         carryForwardPickup: yesterdayRecord ? (yesterdayRecord.totalPendingPickup ?? 0) : 0,
         receivedDelivery: 0,
-        receivedPickup: 0
+        receivedPickup: 0,
+        rtoDelivery: 0,
+        cancelDelivery: 0
       });
     }
   }, [activeRecord, activeDate, allRecords]);
@@ -101,7 +107,7 @@ export default function Delivery() {
     return Math.round((totalCompleted / totalAssigned) * 100);
   }, [last7Days]);
 
-  const totalParcelsDelivery = (Number(hubForm.carryForwardDelivery) || 0) + (Number(hubForm.receivedDelivery) || 0);
+  const totalParcelsDelivery = Math.max(0, (Number(hubForm.carryForwardDelivery) || 0) + (Number(hubForm.receivedDelivery) || 0) - (Number(hubForm.rtoDelivery) || 0) - (Number(hubForm.cancelDelivery) || 0));
   const totalParcelsPickup = (Number(hubForm.carryForwardPickup) || 0) + (Number(hubForm.receivedPickup) || 0);
   const totalParcels = totalParcelsDelivery + totalParcelsPickup;
 
@@ -130,6 +136,8 @@ export default function Delivery() {
       date: activeDate,
       carryForwardDelivery: Number(hubForm.carryForwardDelivery),
       carryForwardPickup: Number(hubForm.carryForwardPickup),
+      rtoDelivery: Number(hubForm.rtoDelivery),
+      cancelDelivery: Number(hubForm.cancelDelivery),
       receivedDelivery: Number(hubForm.receivedDelivery),
       receivedPickup: Number(hubForm.receivedPickup),
       totalDelivery: totalParcelsDelivery,
@@ -332,8 +340,10 @@ export default function Delivery() {
               
               <div className="flex flex-wrap gap-4">
                 <InputColumn label="CF (Del)" val={hubForm.carryForwardDelivery} onChange={v => setHubForm({...hubForm, carryForwardDelivery: v})} />
-                <InputColumn label="CF (Pick)" val={hubForm.carryForwardPickup} onChange={v => setHubForm({...hubForm, carryForwardPickup: v})} />
+                <InputColumn label="RTO" val={hubForm.rtoDelivery} onChange={v => setHubForm({...hubForm, rtoDelivery: v})} />
+                <InputColumn label="Cancel" val={hubForm.cancelDelivery} onChange={v => setHubForm({...hubForm, cancelDelivery: v})} />
                 <InputColumn label="Rec (Del)" val={hubForm.receivedDelivery} onChange={v => setHubForm({...hubForm, receivedDelivery: v})} />
+                <InputColumn label="CF (Pick)" val={hubForm.carryForwardPickup} onChange={v => setHubForm({...hubForm, carryForwardPickup: v})} />
                 <InputColumn label="Rec (Pick)" val={hubForm.receivedPickup} onChange={v => setHubForm({...hubForm, receivedPickup: v})} />
               </div>
 
