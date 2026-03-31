@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Calculator as CalcIcon, IndianRupee, RotateCcw, Delete } from 'lucide-react';
-import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
+import { IndianRupee, RotateCcw } from 'lucide-react';
+import { Card, CardContent } from '../components/ui/Card';
 
 export default function Calculator() {
   // --- Currency Denomination Calculator States ---
@@ -45,85 +45,7 @@ export default function Calculator() {
   }, [denominations]);
 
 
-  // --- Standard Calculator States ---
-  const [display, setDisplay] = useState('0');
-  const [equation, setEquation] = useState('');
-  const [isNewNumber, setIsNewNumber] = useState(true);
 
-  const handleDigit = (digit) => {
-    if (isNewNumber) {
-      setDisplay(digit);
-      setIsNewNumber(false);
-    } else {
-      setDisplay(display === '0' ? digit : display + digit);
-    }
-  };
-
-  const handleOperator = (operator) => {
-    if (equation && !isNewNumber) {
-      handleEqual();
-      setEquation(display + ' ' + operator + ' ');
-    } else {
-      setEquation(display + ' ' + operator + ' ');
-    }
-    setIsNewNumber(true);
-  };
-
-  const handleEqual = () => {
-    if (!equation) return;
-    try {
-      // Evaluate basic math safely
-      const parseStr = equation + display;
-      // Note: intentionally using a simple mapped evaluator for safety over pure eval,
-      // but typical JS calculator can be simplified with Function constructor for basic math only.
-      // eslint-disable-next-line no-new-func
-      const result = new Function(`return ${parseStr.replace(/×/g, '*').replace(/÷/g, '/')}`)();
-      
-      // Handle decimals nicely
-      const finalResult = Number.isInteger(result) ? result.toString() : parseFloat(result.toFixed(4)).toString();
-      
-      setDisplay(finalResult);
-      setEquation('');
-      setIsNewNumber(true);
-    } catch (e) {
-      setDisplay('Error');
-      setEquation('');
-      setIsNewNumber(true);
-    }
-  };
-
-  const handleClear = () => {
-    setDisplay('0');
-    setEquation('');
-    setIsNewNumber(true);
-  };
-
-  const handleDelete = () => {
-    if (isNewNumber) return;
-    if (display.length > 1) {
-      setDisplay(display.slice(0, -1));
-    } else {
-      setDisplay('0');
-      setIsNewNumber(true);
-    }
-  };
-
-  const handleDecimal = () => {
-    if (isNewNumber) {
-      setDisplay('0.');
-      setIsNewNumber(false);
-      return;
-    }
-    if (!display.includes('.')) {
-      setDisplay(display + '.');
-    }
-  };
-
-  const handleToggleSign = () => {
-    if (display !== '0' && display !== 'Error') {
-      setDisplay(display.startsWith('-') ? display.slice(1) : '-' + display);
-    }
-  };
 
   return (
     <motion.div
@@ -140,7 +62,7 @@ export default function Calculator() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
+      <div className="max-w-2xl mx-auto">
         
         {/* --- Currency Denomination Counter --- */}
         <Card className="border-emerald-200 dark:border-emerald-900/50 shadow-xl shadow-emerald-100/50 dark:shadow-none bg-white dark:bg-gray-900 overflow-hidden">
@@ -200,73 +122,7 @@ export default function Calculator() {
         </Card>
 
 
-        {/* --- Standard Calculator (Theme Style) --- */}
-        <div className="w-full max-w-[340px] mx-auto lg:max-w-none lg:w-[340px] lg:ml-auto">
-          <div className="bg-[#1c1c1e] dark:bg-[#151517] rounded-[2.5rem] p-5 lg:p-6 shadow-2xl border border-gray-800/20">
-            {/* Display */}
-            <div className="h-32 flex flex-col justify-end items-end mb-4 px-2">
-              <div className="text-gray-400 text-sm h-6 mb-1 font-mono font-medium"> {equation} </div>
-              <div className="text-white text-6xl font-light tracking-tight truncate w-full text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>
-                {display}
-              </div>
-            </div>
-
-            {/* Numpad Grid */}
-            <div className="grid grid-cols-4 gap-3 lg:gap-4">
-              {/* Row 1 */}
-              <CalcButton onClick={handleDelete} variant="top" icon={<Delete size={24}/>} />
-              <CalcButton onClick={handleClear} variant="top" label="AC" />
-              <CalcButton onClick={() => handleOperator('%')} variant="top" label="%" />
-              <CalcButton onClick={() => handleOperator('/')} variant="operator" label="÷" />
-
-              {/* Row 2 */}
-              <CalcButton onClick={() => handleDigit('7')} variant="number" label="7" />
-              <CalcButton onClick={() => handleDigit('8')} variant="number" label="8" />
-              <CalcButton onClick={() => handleDigit('9')} variant="number" label="9" />
-              <CalcButton onClick={() => handleOperator('*')} variant="operator" label="×" />
-
-              {/* Row 3 */}
-              <CalcButton onClick={() => handleDigit('4')} variant="number" label="4" />
-              <CalcButton onClick={() => handleDigit('5')} variant="number" label="5" />
-              <CalcButton onClick={() => handleDigit('6')} variant="number" label="6" />
-              <CalcButton onClick={() => handleOperator('-')} variant="operator" label="−" />
-
-              {/* Row 4 */}
-              <CalcButton onClick={() => handleDigit('1')} variant="number" label="1" />
-              <CalcButton onClick={() => handleDigit('2')} variant="number" label="2" />
-              <CalcButton onClick={() => handleDigit('3')} variant="number" label="3" />
-              <CalcButton onClick={() => handleOperator('+')} variant="operator" label="+" />
-
-              {/* Row 5 */}
-              <CalcButton onClick={handleToggleSign} variant="number" label="+/-" />
-              <CalcButton onClick={() => handleDigit('0')} variant="number" label="0" />
-              <CalcButton onClick={handleDecimal} variant="number" label="." />
-              <CalcButton onClick={handleEqual} variant="operator" label="=" />
-            </div>
-          </div>
-        </div>
-
       </div>
     </motion.div>
-  );
-}
-
-// Custom calc button matching the screenshot grid style
-function CalcButton({ onClick, label, icon, variant, className = '' }) {
-  const baseStyles = "rounded-full aspect-square flex items-center transition-all active:brightness-125 focus:outline-none";
-  let variantStyles = "";
-  
-  if (variant === 'number') {
-    variantStyles = "bg-[#333333] hover:bg-[#404040] text-gray-200 justify-center text-3xl font-normal shadow-sm";
-  } else if (variant === 'top') {
-    variantStyles = "bg-[#a5a5a5] hover:bg-[#d4d4d2] text-black font-medium justify-center text-2xl shadow-sm";
-  } else if (variant === 'operator') {
-    variantStyles = "bg-primary hover:bg-primary-hover text-white font-medium justify-center text-3xl shadow-sm";
-  }
-
-  return (
-    <button onClick={onClick} className={`${baseStyles} ${variantStyles} ${className}`}>
-      {icon || label}
-    </button>
   );
 }
