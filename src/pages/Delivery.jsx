@@ -375,6 +375,7 @@ export default function Delivery() {
                       <th className="px-5 py-4 text-center">Assigned (D/P)</th>
                       <th className="px-5 py-4 text-center">Completed (D/P)</th>
                       <th className="px-5 py-4 text-center">Failed</th>
+                      <th className="px-5 py-4 text-center">Collection</th>
                       <th className="px-5 py-4 text-center">Ratio</th>
                       <th className="px-5 py-4 text-right">Actions</th>
                     </tr>
@@ -401,6 +402,7 @@ export default function Delivery() {
                             {r.completedDelivery} <span className="text-emerald-300 dark:text-emerald-800">/</span> {r.completedPickup}
                           </td>
                           <td className="px-5 py-4 text-center font-mono font-bold text-rose-500">{tFailed}</td>
+                          <td className="px-5 py-4 text-center font-mono font-black text-emerald-600">₹{r.amountCollected || 0}</td>
                           <td className="px-5 py-4 text-center">
                             <span className={`px-2 py-1 rounded-md text-[11px] font-black ring-1 ring-inset ${ringColor}`}>
                               {ratio}%
