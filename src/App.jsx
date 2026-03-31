@@ -7,6 +7,7 @@ import Earnings from './pages/Earnings';
 import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
+import Calculator from './pages/Calculator';
 import Onboarding from './pages/Onboarding';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -44,6 +45,7 @@ function AppContent() {
         <Route path="earnings" element={<Earnings />} />
         <Route path="reports" element={<Reports />} />
         <Route path="analytics" element={<Analytics />} />
+        <Route path="calculator" element={<Calculator />} />
         <Route path="settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

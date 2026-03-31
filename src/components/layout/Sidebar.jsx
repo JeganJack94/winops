@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Truck, IndianRupee, FileBarChart, PieChart, Settings, Menu, ChevronLeft } from 'lucide-react';
+import { LayoutDashboard, Receipt, Truck, IndianRupee, FileBarChart, PieChart, Calculator, Settings, Menu, ChevronLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const navigation = [
@@ -10,6 +10,7 @@ const navigation = [
   { name: 'Earnings', to: '/earnings', icon: IndianRupee },
   { name: 'Reports', to: '/reports', icon: FileBarChart },
   { name: 'Analytics', to: '/analytics', icon: PieChart },
+  { name: 'Calculator', to: '/calculator', icon: Calculator },
   { name: 'Settings', to: '/settings', icon: Settings },
 ];
 
