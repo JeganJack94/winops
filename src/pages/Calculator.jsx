@@ -119,6 +119,12 @@ export default function Calculator() {
     }
   };
 
+  const handleToggleSign = () => {
+    if (display !== '0' && display !== 'Error') {
+      setDisplay(display.startsWith('-') ? display.slice(1) : '-' + display);
+    }
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -194,50 +200,50 @@ export default function Calculator() {
         </Card>
 
 
-        {/* --- Standard Calculator --- */}
-        <div className="w-full max-w-[400px] mx-auto lg:max-w-none">
-          <Card className="border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden bg-[#f8f9fa] dark:bg-[#0f1115]">
-            <div className="bg-blue-600 dark:bg-primary px-6 py-4 flex items-center gap-2 text-white">
-              <CalcIcon size={20} className="stroke-[2.5]" />
-              <h3 className="font-bold">Standard Calculator</h3>
+        {/* --- Standard Calculator (Theme Style) --- */}
+        <div className="w-full max-w-[340px] mx-auto lg:max-w-none lg:w-[340px] lg:ml-auto">
+          <div className="bg-[#1c1c1e] dark:bg-[#151517] rounded-[2.5rem] p-5 lg:p-6 shadow-2xl border border-gray-800/20">
+            {/* Display */}
+            <div className="h-32 flex flex-col justify-end items-end mb-4 px-2">
+              <div className="text-gray-400 text-sm h-6 mb-1 font-mono font-medium"> {equation} </div>
+              <div className="text-white text-6xl font-light tracking-tight truncate w-full text-right" style={{ fontVariantNumeric: 'tabular-nums' }}>
+                {display}
+              </div>
             </div>
-            <CardContent className="p-6">
-              <div className="bg-white dark:bg-[#1a1d24] rounded-2xl p-5 mb-6 shadow-inner border border-gray-200 dark:border-gray-800">
-                <div className="min-h-[24px] text-right font-mono text-gray-500 dark:text-gray-400 text-sm overflow-hidden text-ellipsis whitespace-nowrap mb-1">
-                  {equation}
-                </div>
-                <div className="text-right font-mono font-light text-5xl text-gray-900 dark:text-white overflow-hidden text-ellipsis whitespace-nowrap tracking-tight">
-                  {display}
-                </div>
-              </div>
 
-              <div className="grid grid-cols-4 gap-3">
-                <CalcButton onClick={handleClear} variant="danger" label="AC" />
-                <CalcButton onClick={handleDelete} variant="secondary" icon={<Delete size={20}/>} />
-                <CalcButton onClick={() => handleOperator('%')} variant="secondary" label="%" />
-                <CalcButton onClick={() => handleOperator('/')} variant="primary" label="÷" />
+            {/* Numpad Grid */}
+            <div className="grid grid-cols-4 gap-3 lg:gap-4">
+              {/* Row 1 */}
+              <CalcButton onClick={handleDelete} variant="top" icon={<Delete size={24}/>} />
+              <CalcButton onClick={handleClear} variant="top" label="AC" />
+              <CalcButton onClick={() => handleOperator('%')} variant="top" label="%" />
+              <CalcButton onClick={() => handleOperator('/')} variant="operator" label="÷" />
 
-                <CalcButton onClick={() => handleDigit('7')} variant="default" label="7" />
-                <CalcButton onClick={() => handleDigit('8')} variant="default" label="8" />
-                <CalcButton onClick={() => handleDigit('9')} variant="default" label="9" />
-                <CalcButton onClick={() => handleOperator('*')} variant="primary" label="×" />
+              {/* Row 2 */}
+              <CalcButton onClick={() => handleDigit('7')} variant="number" label="7" />
+              <CalcButton onClick={() => handleDigit('8')} variant="number" label="8" />
+              <CalcButton onClick={() => handleDigit('9')} variant="number" label="9" />
+              <CalcButton onClick={() => handleOperator('*')} variant="operator" label="×" />
 
-                <CalcButton onClick={() => handleDigit('4')} variant="default" label="4" />
-                <CalcButton onClick={() => handleDigit('5')} variant="default" label="5" />
-                <CalcButton onClick={() => handleDigit('6')} variant="default" label="6" />
-                <CalcButton onClick={() => handleOperator('-')} variant="primary" label="−" />
+              {/* Row 3 */}
+              <CalcButton onClick={() => handleDigit('4')} variant="number" label="4" />
+              <CalcButton onClick={() => handleDigit('5')} variant="number" label="5" />
+              <CalcButton onClick={() => handleDigit('6')} variant="number" label="6" />
+              <CalcButton onClick={() => handleOperator('-')} variant="operator" label="−" />
 
-                <CalcButton onClick={() => handleDigit('1')} variant="default" label="1" />
-                <CalcButton onClick={() => handleDigit('2')} variant="default" label="2" />
-                <CalcButton onClick={() => handleDigit('3')} variant="default" label="3" />
-                <CalcButton onClick={() => handleOperator('+')} variant="primary" label="+" />
+              {/* Row 4 */}
+              <CalcButton onClick={() => handleDigit('1')} variant="number" label="1" />
+              <CalcButton onClick={() => handleDigit('2')} variant="number" label="2" />
+              <CalcButton onClick={() => handleDigit('3')} variant="number" label="3" />
+              <CalcButton onClick={() => handleOperator('+')} variant="operator" label="+" />
 
-                <CalcButton onClick={() => handleDigit('0')} variant="default" label="0" className="col-span-2" />
-                <CalcButton onClick={handleDecimal} variant="default" label="." />
-                <CalcButton onClick={handleEqual} variant="equal" label="=" />
-              </div>
-            </CardContent>
-          </Card>
+              {/* Row 5 */}
+              <CalcButton onClick={handleToggleSign} variant="number" label="+/-" />
+              <CalcButton onClick={() => handleDigit('0')} variant="number" label="0" />
+              <CalcButton onClick={handleDecimal} variant="number" label="." />
+              <CalcButton onClick={handleEqual} variant="operator" label="=" />
+            </div>
+          </div>
         </div>
 
       </div>
@@ -245,20 +251,21 @@ export default function Calculator() {
   );
 }
 
-// Simple Helper Component for Calculator Buttons
+// Custom calc button matching the screenshot grid style
 function CalcButton({ onClick, label, icon, variant, className = '' }) {
-  const baseStyles = "h-16 rounded-2xl font-semibold text-xl flex items-center justify-center transition-all active:scale-95 shadow-sm";
+  const baseStyles = "rounded-full aspect-square flex items-center transition-all active:brightness-125 focus:outline-none";
+  let variantStyles = "";
   
-  const variants = {
-    default: "bg-white dark:bg-[#1a1d24] hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-800",
-    secondary: "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-blue-600 dark:text-blue-400 border border-transparent font-bold",
-    primary: "bg-blue-100 dark:bg-primary/20 hover:bg-blue-200 dark:hover:bg-primary/30 text-blue-700 dark:text-primary border border-transparent text-2xl font-light",
-    danger: "bg-rose-100 dark:bg-rose-500/10 hover:bg-rose-200 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 border border-transparent font-bold",
-    equal: "bg-blue-600 dark:bg-primary hover:bg-blue-700 dark:hover:bg-primary-hover text-white dark:text-gray-900 border border-transparent shadow-md shadow-blue-500/30 text-2xl",
-  };
+  if (variant === 'number') {
+    variantStyles = "bg-[#333333] hover:bg-[#404040] text-gray-200 justify-center text-3xl font-normal shadow-sm";
+  } else if (variant === 'top') {
+    variantStyles = "bg-[#a5a5a5] hover:bg-[#d4d4d2] text-black font-medium justify-center text-2xl shadow-sm";
+  } else if (variant === 'operator') {
+    variantStyles = "bg-primary hover:bg-primary-hover text-white font-medium justify-center text-3xl shadow-sm";
+  }
 
   return (
-    <button onClick={onClick} className={`${baseStyles} ${variants[variant]} ${className}`}>
+    <button onClick={onClick} className={`${baseStyles} ${variantStyles} ${className}`}>
       {icon || label}
     </button>
   );
