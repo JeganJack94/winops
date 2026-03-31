@@ -52,15 +52,15 @@ const itemVariants = {
 export default function Reports() {
   const { theme } = useTheme();
   const [dateRange, setDateRange] = useState('This Week');
-  const [riderEntries, setRiderEntries] = useState([]);
+  const [allRecords, setAllRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
-    const unsubRider = deliveryService.subscribeToRiderEntries(setRiderEntries);
+    const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
     return () => {
-      unsubRider();
+      unsubRecords();
       unsubExpenses();
     };
   }, []);
@@ -70,6 +70,8 @@ export default function Reports() {
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
     let startDate;
+    let endDate = null;
+
     switch (dateRange) {
       case 'This Week':
         startDate = new Date(today);
@@ -78,47 +80,35 @@ export default function Reports() {
       case 'Last Week':
         startDate = new Date(today);
         startDate.setDate(today.getDate() - today.getDay() - 7);
-        const endDateLastWeek = new Date(startDate);
-        endDateLastWeek.setDate(startDate.getDate() + 6);
-        return {
-          riders: riderEntries.filter(e => {
-            const d = new Date(e.date);
-            return d >= startDate && d <= endDateLastWeek;
-          }),
-          expenses: expenses.filter(e => {
-            const d = new Date(e.date);
-            return d >= startDate && d <= endDateLastWeek;
-          })
-        };
+        endDate = new Date(startDate);
+        endDate.setDate(startDate.getDate() + 6);
+        break;
       case 'This Month':
         startDate = new Date(now.getFullYear(), now.getMonth(), 1);
         break;
       case 'Last Month':
         startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-        const endDateLastMonth = new Date(now.getFullYear(), now.getMonth(), 0);
-        return {
-          riders: riderEntries.filter(e => {
-            const d = new Date(e.date);
-            return d >= startDate && d <= endDateLastMonth;
-          }),
-          expenses: expenses.filter(e => {
-            const d = new Date(e.date);
-            return d >= startDate && d <= endDateLastMonth;
-          })
-        };
+        endDate = new Date(now.getFullYear(), now.getMonth(), 0);
+        break;
       default:
-        return { riders: riderEntries, expenses: expenses };
+        startDate = new Date(0); // All time
     }
 
-    return {
-      riders: riderEntries.filter(e => new Date(e.date) >= startDate),
-      expenses: expenses.filter(e => new Date(e.date) >= startDate)
+    const recordsFilter = (e) => {
+      const d = new Date(e.date);
+      if (endDate) return d >= startDate && d <= endDate;
+      return d >= startDate;
     };
-  }, [dateRange, riderEntries, expenses]);
+
+    return {
+      records: allRecords.filter(recordsFilter),
+      expenses: expenses.filter(recordsFilter)
+    };
+  }, [dateRange, allRecords, expenses]);
 
   const metrics = useMemo(() => {
-    const totalParcels = filteredData.riders.reduce((acc, curr) => acc + (Number(curr.delivered) || 0), 0);
-    const totalIncome = filteredData.riders.reduce((acc, curr) => acc + (Number(curr.income) || 0), 0);
+    const totalParcels = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalCompleted) || 0), 0);
+    const totalIncome = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
     const totalExp = filteredData.expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
     const netProfit = totalIncome - totalExp;
 
@@ -155,8 +145,8 @@ export default function Reports() {
   }, [filteredData]);
 
   const trendData = useMemo(() => {
-    const incomeByDate = filteredData.riders.reduce((acc, curr) => {
-      acc[curr.date] = (acc[curr.date] || 0) + (Number(curr.income) || 0);
+    const incomeByDate = filteredData.records.reduce((acc, curr) => {
+      acc[curr.date] = (acc[curr.date] || 0) + (Number(curr.totalAmount) || 0);
       return acc;
     }, {});
 
@@ -229,19 +219,24 @@ export default function Reports() {
       // Income Details Table
       doc.setFontSize(14);
       doc.setTextColor(30, 41, 59);
-      doc.text('Income Details (Rider Entries)', 14, 85);
+      doc.text('Income Details (Rider Performance)', 14, 85);
       
-      const riderRows = filteredData.riders.map(r => [
-        r.date,
-        r.riderName || 'Unknown',
-        r.area || 'N/A',
-        r.delivered || 0,
-        `₹${(r.income || 0).toLocaleString()}`
-      ]);
+      const riderRows = [];
+      filteredData.records.forEach(record => {
+        (record.riders || []).forEach(r => {
+          riderRows.push([
+            record.date,
+            r.riderName || 'Unknown',
+            r.area || 'N/A',
+            (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0),
+            `₹${(Number(r.amountCollected) || 0).toLocaleString()}`
+          ]);
+        });
+      });
 
       autoTable(doc, {
         startY: 90,
-        head: [['Date', 'Rider', 'Area', 'Delivered', 'Income']],
+        head: [['Date', 'Rider', 'Area', 'Completed', 'Collection']],
         body: riderRows,
         theme: 'striped',
         headStyles: { fillColor: [16, 185, 129] },

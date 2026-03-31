@@ -114,25 +114,17 @@ const SummaryCard = ({ title, subtitle, value, icon: Icon, accent, delay = 0 }) 
 ───────────────────────────────────────────── */
 export default function Dashboard() {
   const { theme } = useTheme();
-  const [hubEntries, setHubEntries] = useState([]);
-  const [allHubEntries, setAllHubEntries] = useState([]);
-  const [riderEntries, setRiderEntries] = useState([]);
+  const [allRecords, setAllRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
 
   useEffect(() => {
-    // today + rider entries (existing subscriptions)
-    const unsubHub = deliveryService.subscribeToHubEntries(setHubEntries);
-    const unsubRider = deliveryService.subscribeToRiderEntries(setRiderEntries);
+    // Single subscription to daily_records instead of multiple legacy ones
+    const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords, 100);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
 
-    // All hub entries (no limit) for overall / monthly counts
-    const unsubAllHub = deliveryService.subscribeToAllHubEntries(setAllHubEntries);
-
     return () => {
-      unsubHub();
-      unsubRider();
+      unsubRecords();
       unsubExpenses();
-      unsubAllHub();
     };
   }, []);
 
@@ -141,28 +133,27 @@ export default function Dashboard() {
 
   /* ──── Summary cards (overall + monthly) ──── */
   const summaryStats = useMemo(() => {
-    const overallReceived = allHubEntries.reduce(
-      (acc, e) => acc + (Number(e.totalReceived) || 0), 0
+    const overallReceived = allRecords.reduce(
+      (acc, e) => acc + (Number(e.receivedDelivery) || 0) + (Number(e.receivedPickup) || 0), 0
     );
-    const monthlyReceived = allHubEntries
+    const monthlyReceived = allRecords
       .filter(e => e.date && e.date.startsWith(currentMonth))
-      .reduce((acc, e) => acc + (Number(e.totalReceived) || 0), 0);
+      .reduce((acc, e) => acc + (Number(e.receivedDelivery) || 0) + (Number(e.receivedPickup) || 0), 0);
 
     return { overallReceived, monthlyReceived };
-  }, [allHubEntries, currentMonth]);
+  }, [allRecords, currentMonth]);
 
   /* ──── 2×2 stat cards ──── */
   const stats = useMemo(() => {
-    const todayHub = hubEntries.filter(e => e.date === today);
-    const todayRiders = riderEntries.filter(e => e.date === today);
+    const todayRecord = allRecords.find(r => r.date === today);
 
     const monthlyExpenses = expenses
       .filter(e => e.date && e.date.startsWith(currentMonth))
       .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
-    const received = todayHub.reduce((acc, curr) => acc + (Number(curr.totalReceived) || 0), 0);
-    const delivered = todayRiders.reduce((acc, curr) => acc + (Number(curr.delivered) || 0), 0);
-    const pending = received - delivered;
+    const received = todayRecord ? (Number(todayRecord.receivedDelivery) || 0) + (Number(todayRecord.receivedPickup) || 0) : 0;
+    const delivered = todayRecord ? (Number(todayRecord.totalCompleted) || 0) : 0;
+    const pending = todayRecord ? (Number(todayRecord.totalPending) || 0) : 0;
 
     return [
       {
@@ -190,23 +181,20 @@ export default function Dashboard() {
         gradient: 'linear-gradient(135deg, #9f1239 0%, #f43f5e 100%)',
       },
     ];
-  }, [hubEntries, riderEntries, expenses, today, currentMonth]);
+  }, [allRecords, expenses, today, currentMonth]);
 
   /* ──── Chart data ──── */
   const performanceData = useMemo(() => {
-    const performance = riderEntries
-      .filter(e => e.date === today)
-      .reduce((acc, curr) => {
-        const name = curr.riderName || 'Unknown';
-        if (!acc[name]) acc[name] = { delivered: 0, pending: 0 };
-        acc[name].delivered += (Number(curr.delivered) || 0);
-        acc[name].pending += (Number(curr.pending) || 0);
-        return acc;
-      }, {});
+    const todayRecord = allRecords.find(r => r.date === today);
+    const riders = todayRecord?.riders || [];
 
-    const labels = Object.keys(performance);
-    const delivered = labels.map(l => performance[l].delivered);
-    const pending = labels.map(l => performance[l].pending);
+    const labels = riders.map(r => r.riderName || 'Unknown');
+    const delivered = riders.map(r => (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0));
+    const pending = riders.map(r => {
+      const totalAssigned = (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
+      const totalCompleted = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
+      return Math.max(0, totalAssigned - totalCompleted);
+    });
 
     return {
       labels: labels.length > 0 ? labels : ['No Activity'],
@@ -225,7 +213,7 @@ export default function Dashboard() {
         },
       ],
     };
-  }, [riderEntries, today]);
+  }, [allRecords, today]);
 
   const recentExpenses = useMemo(() => expenses.slice(0, 5), [expenses]);
 

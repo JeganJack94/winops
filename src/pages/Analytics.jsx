@@ -30,20 +30,17 @@ ChartJS.register(
 
 export default function Analytics() {
   const { theme } = useTheme();
-  const [hubEntries, setHubEntries] = useState([]);
-  const [riderEntries, setRiderEntries] = useState([]);
+  const [allRecords, setAllRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
   const [settings, setSettings] = useState({ ratePerParcel: 18 });
 
   useEffect(() => {
-    const unsubHub = deliveryService.subscribeToAllHubEntries(setHubEntries);
-    const unsubRider = deliveryService.subscribeToRiderEntries(setRiderEntries);
+    const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords, 100);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses, 100);
     const unsubSettings = settingsService.subscribeToSettings(setSettings);
 
     return () => {
-      unsubHub();
-      unsubRider();
+      unsubRecords();
       unsubExpenses();
       unsubSettings();
     };
@@ -62,13 +59,9 @@ export default function Analytics() {
       const dateStr = d.toISOString().split('T')[0];
       labels.push(d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
       
-      // Delivery Volume
-      const dayDelivery = riderEntries
-        .filter(e => {
-          const entryDate = e.date || (e.timestamp && e.timestamp.split('T')[0]);
-          return entryDate === dateStr;
-        })
-        .reduce((acc, curr) => acc + (Number(curr.delivered) || 0), 0);
+      // Delivery Volume from daily_records
+      const record = allRecords.find(r => r.date === dateStr);
+      const dayDelivery = record ? (Number(record.totalCompleted) || 0) : 0;
       deliveryTotals.push(dayDelivery);
 
       // Daily Expenses
@@ -106,14 +99,16 @@ export default function Analytics() {
         }
       ]
     };
-  }, [riderEntries, expenses]);
+  }, [allRecords, expenses]);
 
   const riderEfficiencyData = useMemo(() => {
-    const efficiency = riderEntries.reduce((acc, curr) => {
-      const name = curr.riderName || 'Unknown';
-      if (!acc[name]) acc[name] = { assigned: 0, delivered: 0 };
-      acc[name].assigned += (Number(curr.assigned) || 0);
-      acc[name].delivered += (Number(curr.delivered) || 0);
+    const efficiency = allRecords.reduce((acc, record) => {
+      (record.riders || []).forEach(r => {
+        const name = r.riderName || 'Unknown';
+        if (!acc[name]) acc[name] = { assigned: 0, delivered: 0 };
+        acc[name].assigned += (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
+        acc[name].delivered += (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
+      });
       return acc;
     }, {});
 
@@ -134,18 +129,23 @@ export default function Analytics() {
         }
       ]
     };
-  }, [riderEntries]);
+  }, [allRecords]);
 
   const kpis = useMemo(() => {
-    const totalAssigned = riderEntries.reduce((acc, curr) => acc + (Number(curr.assigned) || 0), 0);
-    const totalDelivered = riderEntries.reduce((acc, curr) => acc + (Number(curr.delivered) || 0), 0);
+    let totalAssigned = 0;
+    let totalDelivered = 0;
+
+    allRecords.forEach(record => {
+      totalAssigned += (Number(record.totalAssigned) || 0);
+      totalDelivered += (Number(record.totalCompleted) || 0);
+    });
+
     const successRate = totalAssigned > 0 ? (totalDelivered / totalAssigned) * 100 : 0;
     
     const revenue = totalDelivered * (Number(settings.ratePerParcel) || 18);
     const totalExpenses = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
     const profit = revenue - totalExpenses;
 
-    // Estimate on-time from whatever data we have, defaulting to 92% of success rate for now
     const onTimeRate = successRate > 0 ? successRate * 0.94 : 0;
 
     return {
@@ -155,7 +155,7 @@ export default function Analytics() {
       revenue: revenue.toLocaleString('en-IN'),
       totalExpenses: totalExpenses.toLocaleString('en-IN')
     };
-  }, [riderEntries, expenses, settings]);
+  }, [allRecords, expenses, settings]);
 
   return (
     <div className="space-y-6">
