@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { IndianRupee, RotateCcw } from 'lucide-react';
+import { IndianRupee, RotateCcw, Share2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 
 export default function Calculator() {
@@ -44,8 +44,31 @@ export default function Calculator() {
     }, 0);
   }, [denominations]);
 
+  const shareWhatsApp = () => {
+    const today = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
 
+    const lines = currencyNotes
+      .filter(note => Number(denominations[note]) > 0)
+      .map(note => {
+        const count = denominations[note];
+        const subtotal = note * count;
+        return `${note} x ${count} = ₹${subtotal.toLocaleString('en-IN')}`;
+      });
 
+    if (lines.length === 0) {
+      alert("Please enter some denominations first!");
+      return;
+    }
+
+    const text = `*Win Express – Cash Denomination Report*\nDate: ${today}\n\n${lines.join('\n')}\n\n*Total Amount: ₹${totalCurrency.toLocaleString('en-IN')}*\n*Total Notes: ${totalNotesCount}*`;
+    
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
 
   return (
     <motion.div
@@ -71,13 +94,22 @@ export default function Calculator() {
               <IndianRupee size={20} className="stroke-[2.5]" />
               <h3 className="font-bold">Cash Denominations</h3>
             </div>
-            <button 
-              onClick={clearDenominations}
-              className="p-2 text-emerald-600 hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 rounded-lg transition-colors cursor-pointer"
-              title="Clear All"
-            >
-              <RotateCcw size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={shareWhatsApp}
+                className="p-2 text-emerald-600 hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 rounded-lg transition-colors cursor-pointer"
+                title="Share on WhatsApp"
+              >
+                <Share2 size={18} />
+              </button>
+              <button 
+                onClick={clearDenominations}
+                className="p-2 text-emerald-600 hover:bg-emerald-200/50 dark:hover:bg-emerald-800/50 rounded-lg transition-colors cursor-pointer"
+                title="Clear All"
+              >
+                <RotateCcw size={18} />
+              </button>
+            </div>
           </div>
           <CardContent className="p-6">
             <div className="flex flex-col gap-4">
@@ -120,8 +152,6 @@ export default function Calculator() {
             </div>
           </CardContent>
         </Card>
-
-
       </div>
     </motion.div>
   );

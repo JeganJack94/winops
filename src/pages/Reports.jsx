@@ -1,9 +1,10 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Download, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign, Package, PieChart, FileText } from 'lucide-react';
+import { Download, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign, Package, PieChart, FileText, Banknote } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
+import { settingsService } from '../services/settingsService';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
@@ -54,14 +55,17 @@ export default function Reports() {
   const [dateRange, setDateRange] = useState('This Week');
   const [allRecords, setAllRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [settings, setSettings] = useState({ ratePerParcel: 18 });
   const [isExporting, setIsExporting] = useState(false);
 
   useEffect(() => {
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
+    const unsubSettings = settingsService.subscribeToSettings(setSettings);
     return () => {
       unsubRecords();
       unsubExpenses();
+      unsubSettings();
     };
   }, []);
 
@@ -108,9 +112,12 @@ export default function Reports() {
 
   const metrics = useMemo(() => {
     const totalParcels = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalCompleted) || 0), 0);
-    const totalIncome = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
+    const totalCollections = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
     const totalExp = filteredData.expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-    const netProfit = totalIncome - totalExp;
+    
+    // Revenue is based on parcels delivered
+    const totalRevenue = totalParcels * (Number(settings.ratePerParcel) || 18);
+    const netProfit = totalRevenue - totalExp;
 
     return [
       { 
@@ -121,11 +128,18 @@ export default function Reports() {
         gradient: 'from-blue-500/10 to-indigo-500/10'
       },
       { 
-        label: 'Total Income', 
-        value: `₹${totalIncome.toLocaleString()}`, 
-        icon: DollarSign, 
+        label: 'Total Collections', 
+        value: `₹${totalCollections.toLocaleString()}`, 
+        icon: Banknote, 
         color: 'emerald',
         gradient: 'from-emerald-500/10 to-teal-500/10'
+      },
+      { 
+        label: 'Operational Revenue', 
+        value: `₹${totalRevenue.toLocaleString()}`, 
+        icon: DollarSign, 
+        color: 'blue',
+        gradient: 'from-blue-500/10 to-indigo-500/10'
       },
       { 
         label: 'Total Expenses', 
@@ -142,11 +156,12 @@ export default function Reports() {
         gradient: 'from-amber-500/10 to-orange-500/10'
       },
     ];
-  }, [filteredData]);
+  }, [filteredData, settings]);
 
   const trendData = useMemo(() => {
-    const incomeByDate = filteredData.records.reduce((acc, curr) => {
-      acc[curr.date] = (acc[curr.date] || 0) + (Number(curr.totalAmount) || 0);
+    const revenueByDate = filteredData.records.reduce((acc, curr) => {
+      // Use revenue (parcels * rate) for trend
+      acc[curr.date] = (acc[curr.date] || 0) + ((Number(curr.totalCompleted) || 0) * (Number(settings.ratePerParcel) || 18));
       return acc;
     }, {});
 
@@ -155,15 +170,15 @@ export default function Reports() {
       return acc;
     }, {});
 
-    const allDates = Array.from(new Set([...Object.keys(incomeByDate), ...Object.keys(expensesByDate)])).sort();
+    const allDates = Array.from(new Set([...Object.keys(revenueByDate), ...Object.keys(expensesByDate)])).sort();
     const labels = allDates.map(d => d.split('-').slice(1).join('/'));
 
     return {
       labels: labels.length > 0 ? labels : ['No Data'],
       datasets: [
         {
-          label: 'Income',
-          data: allDates.map(d => incomeByDate[d] || 0),
+          label: 'Revenue',
+          data: allDates.map(d => revenueByDate[d] || 0),
           borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.1)',
           fill: true,
@@ -183,7 +198,7 @@ export default function Reports() {
         }
       ]
     };
-  }, [filteredData]);
+  }, [filteredData, settings]);
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -203,7 +218,7 @@ export default function Reports() {
       
       // Summary Box
       doc.setFillColor(248, 250, 252);
-      doc.rect(14, 40, pageWidth - 28, 35, 'F');
+      doc.rect(14, 40, pageWidth - 28, 45, 'F');
       
       doc.setFontSize(11);
       doc.setTextColor(71, 85, 105);
@@ -219,24 +234,26 @@ export default function Reports() {
       // Income Details Table
       doc.setFontSize(14);
       doc.setTextColor(30, 41, 59);
-      doc.text('Income Details (Rider Performance)', 14, 85);
+      doc.text('Performance Details (Rider Breakdown)', 14, 95);
       
       const riderRows = [];
       filteredData.records.forEach(record => {
         (record.riders || []).forEach(r => {
+          const completed = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
+          const revenue = completed * (Number(settings.ratePerParcel) || 18);
           riderRows.push([
             record.date,
             r.riderName || 'Unknown',
-            r.area || 'N/A',
-            (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0),
+            completed,
+            `₹${revenue.toLocaleString()}`,
             `₹${(Number(r.amountCollected) || 0).toLocaleString()}`
           ]);
         });
       });
 
       autoTable(doc, {
-        startY: 90,
-        head: [['Date', 'Rider', 'Area', 'Completed', 'Collection']],
+        startY: 100,
+        head: [['Date', 'Rider', 'Completed', 'Revenue (P×Rate)', 'Collection']],
         body: riderRows,
         theme: 'striped',
         headStyles: { fillColor: [16, 185, 129] },
@@ -244,7 +261,7 @@ export default function Reports() {
       });
 
       // Expenses Details Table
-      const finalY = (doc.lastAutoTable?.finalY || 90) + 15;
+      const finalY = (doc.lastAutoTable?.finalY || 100) + 15;
       doc.setFontSize(14);
       doc.text('Expense Details', 14, finalY);
       
@@ -365,7 +382,7 @@ export default function Reports() {
             <div className="hidden sm:flex items-center gap-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
                 <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                Income
+                Revenue
               </div>
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
                 <div className="w-3 h-3 rounded-full bg-rose-500" />
