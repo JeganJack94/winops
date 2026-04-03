@@ -1,16 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet } from 'react-router-dom';
+import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
-import BottomNav from './BottomNav';
 import { useTheme } from '../../context/ThemeContext';
-import { Sun, Moon, Truck, User } from 'lucide-react';
+import { Sun, Moon, Truck, Menu } from 'lucide-react';
 import { auth } from '../../services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function MainLayout() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const { theme, toggleTheme } = useTheme();
   const [user, setUser] = useState(null);
+  const location = useLocation();
+
+  // Close mobile menu on route change
+  useEffect(() => {
+    setIsMobileMenuOpen(false);
+  }, [location]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -23,22 +29,39 @@ export default function MainLayout() {
     setIsSidebarOpen(prev => !prev);
   };
 
+  const toggleMobileMenu = () => {
+    setIsMobileMenuOpen(prev => !prev);
+  };
+
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden">
-      {/* Sidebar for desktop */}
-      <Sidebar isOpen={isSidebarOpen} toggleSidebar={toggleSidebar} />
+      {/* Responsive Sidebar */}
+      <Sidebar 
+        isOpen={isSidebarOpen} 
+        toggleSidebar={toggleSidebar} 
+        isMobileOpen={isMobileMenuOpen}
+        closeMobileMenu={() => setIsMobileMenuOpen(false)}
+      />
       
       {/* Main content area */}
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Mobile Header */}
         <header className="md:hidden bg-white dark:bg-gray-800 shadow-sm px-4 py-3 flex items-center justify-between border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
-          <div className="flex items-center gap-2">
-             <div className="bg-primary/10 p-1.5 rounded-lg">
-                <Truck className="h-5 w-5 text-primary" />
+          <div className="flex items-center gap-3">
+             <button
+               onClick={toggleMobileMenu}
+               className="p-1.5 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+             >
+               <Menu className="h-6 w-6" />
+             </button>
+             <div className="flex items-center gap-2">
+                <div className="bg-primary/10 p-1.5 rounded-lg">
+                   <Truck className="h-5 w-5 text-primary" />
+                </div>
+                <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
+                   <span className="text-primary">Win</span> <span className="text-gray-400">Express</span>
+                </h1>
              </div>
-             <h1 className="text-xl font-bold tracking-tight text-gray-900 dark:text-white">
-                <span className="text-primary">Win</span> <span className="text-gray-400">Express</span>
-             </h1>
           </div>
           <div className="flex items-center gap-3">
              <button 
@@ -92,15 +115,12 @@ export default function MainLayout() {
         </header>
 
         {/* Page Content */}
-        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 pb-24 md:pb-6 relative custom-scrollbar">
+        <main className="flex-1 overflow-x-hidden overflow-y-auto p-4 md:p-6 pb-6 relative custom-scrollbar">
           <div className="w-full min-h-full">
             <Outlet />
           </div>
         </main>
       </div>
-
-      {/* Bottom Nav for mobile */}
-      <BottomNav />
     </div>
   );
 }

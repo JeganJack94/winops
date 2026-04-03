@@ -2,6 +2,8 @@ import { db } from './firebase';
 import { 
   collection, 
   addDoc, 
+  deleteDoc,
+  doc,
   onSnapshot,
   query,
   orderBy,
@@ -16,6 +18,11 @@ export const expenseService = {
       ...data,
       timestamp: new Date().toISOString()
     });
+  },
+
+  deleteExpense: async (id) => {
+    const docRef = doc(db, EXPENSE_COLLECTION, id);
+    return await deleteDoc(docRef);
   },
 
   subscribeToExpenses: (callback, limitCount = 50) => {

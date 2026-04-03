@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, Receipt, Truck, IndianRupee, FileBarChart, PieChart, Calculator, Settings, Menu, ChevronLeft } from 'lucide-react';
+import { 
+  LayoutDashboard, Receipt, Truck, IndianRupee, 
+  FileBarChart, PieChart, Calculator, Settings, 
+  Menu, ChevronLeft, X 
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const navigation = [
@@ -14,9 +18,9 @@ const navigation = [
   { name: 'Settings', to: '/settings', icon: Settings },
 ];
 
-export default function Sidebar({ isOpen, toggleSidebar }) {
-  return (
-    <div className={`hidden md:flex flex-col flex-shrink-0 transition-all duration-300 ease-in-out bg-secondary dark:bg-[#0f172a] border-r border-blue-800/10 dark:border-gray-800 shadow-xl ${isOpen ? 'w-64' : 'w-20'}`}>
+export default function Sidebar({ isOpen, toggleSidebar, isMobileOpen, closeMobileMenu }) {
+  const sidebarContent = (
+    <div className={`flex flex-col h-full transition-all duration-300 ease-in-out bg-secondary dark:bg-[#0f172a] border-r border-blue-800/10 dark:border-gray-800 shadow-xl ${isOpen ? 'w-64' : 'w-20'}`}>
       <div className="flex-1 flex flex-col min-h-0">
         <div className="flex items-center h-16 flex-shrink-0 px-4 bg-blue-900 dark:bg-gray-950 justify-between">
           <AnimatePresence mode="wait">
@@ -35,11 +39,19 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
               </motion.div>
             )}
           </AnimatePresence>
+          
+          {/* Close button for mobile, toggle for desktop */}
           <button 
-            onClick={toggleSidebar} 
+            onClick={isMobileOpen ? closeMobileMenu : toggleSidebar} 
             className={`p-1.5 rounded-md text-gray-300 hover:text-white hover:bg-blue-800/50 transition-colors ${!isOpen ? 'mx-auto' : ''}`}
           >
-            {isOpen ? <ChevronLeft className="h-5 w-5" /> : <Menu className="h-6 w-6" />}
+            {isMobileOpen ? (
+              <X className="h-6 w-6" />
+            ) : isOpen ? (
+              <ChevronLeft className="h-5 w-5" />
+            ) : (
+              <Menu className="h-6 w-6" />
+            )}
           </button>
         </div>
         
@@ -51,6 +63,7 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
                 <NavLink
                   key={item.name}
                   to={item.to}
+                  onClick={closeMobileMenu}
                   title={!isOpen ? item.name : undefined}
                   className={({ isActive }) =>
                     `group flex items-center px-3 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
@@ -69,5 +82,44 @@ export default function Sidebar({ isOpen, toggleSidebar }) {
         </div>
       </div>
     </div>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <div className="hidden md:block h-screen sticky top-0">
+        {sidebarContent}
+      </div>
+
+      {/* Mobile Drawer */}
+      <AnimatePresence>
+        {isMobileOpen && (
+          <>
+            {/* Backdrop */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={closeMobileMenu}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[9998] md:hidden"
+            />
+            
+            {/* Sidebar drawer */}
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed inset-y-0 left-0 w-64 z-[9999] md:hidden shadow-2xl"
+            >
+              {/* Force isOpen true for mobile drawer to see names */}
+              {React.cloneElement(sidebarContent, { 
+                className: sidebarContent.props.className.replace('w-20', 'w-64').replace('w-64', 'w-64') 
+              })}
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+    </>
   );
 }
