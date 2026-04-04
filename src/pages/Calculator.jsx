@@ -1,23 +1,32 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { IndianRupee, RotateCcw, Share2 } from 'lucide-react';
 import { Card, CardContent } from '../components/ui/Card';
 
+const CACHE_KEY = 'winops_calculator_denominations';
+
 export default function Calculator() {
+  const currencyNotes = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+
   // --- Currency Denomination Calculator States ---
-  const [denominations, setDenominations] = useState({
-    500: '',
-    200: '',
-    100: '',
-    50: '',
-    20: '',
-    10: '',
-    5: '',
-    2: '',
-    1: ''
+  const [denominations, setDenominations] = useState(() => {
+    const saved = localStorage.getItem(CACHE_KEY);
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch (e) {
+        console.error("Error parsing saved denominations", e);
+      }
+    }
+    return {
+      500: '', 200: '', 100: '', 50: '', 20: '', 10: '', 5: '', 2: '', 1: ''
+    };
   });
 
-  const currencyNotes = [500, 200, 100, 50, 20, 10, 5, 2, 1];
+  // Save to localStorage whenever denominations change
+  useEffect(() => {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(denominations));
+  }, [denominations]);
 
   const handleDenominationChange = (note, value) => {
     // Only allow positive numbers
@@ -26,9 +35,13 @@ export default function Calculator() {
   };
 
   const clearDenominations = () => {
-    setDenominations({
-      500: '', 200: '', 100: '', 50: '', 20: '', 10: '', 5: '', 2: '', 1: ''
-    });
+    if (window.confirm("Are you sure you want to reset all counts?")) {
+      const empty = {
+        500: '', 200: '', 100: '', 50: '', 20: '', 10: '', 5: '', 2: '', 1: ''
+      };
+      setDenominations(empty);
+      localStorage.removeItem(CACHE_KEY);
+    }
   };
 
   const totalCurrency = useMemo(() => {

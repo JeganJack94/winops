@@ -95,7 +95,11 @@ export default function Delivery() {
 
   const avgReceived = useMemo(() => {
     if (last7Days.length === 0) return 0;
-    const total = last7Days.reduce((sum, r) => sum + (r.received || 0), 0);
+    const total = last7Days.reduce((sum, r) => {
+      const recDel = r.receivedDelivery ?? r.received ?? 0;
+      const recPick = r.receivedPickup ?? 0;
+      return sum + (Number(recDel) + Number(recPick));
+    }, 0);
     return Math.round(total / last7Days.length);
   }, [last7Days]);
 
