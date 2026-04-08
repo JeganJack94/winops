@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Users, Sun, Moon, LogOut, IndianRupee, Trash2, Plus, X, Phone, Building, Mail } from 'lucide-react';
+import { User, Users, Sun, Moon, LogOut, IndianRupee, Trash2, Plus, X, Phone, Building, Mail, Pencil } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
@@ -26,7 +26,7 @@ const Modal = ({ onClose, title, children }) => {
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4">
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
@@ -74,6 +74,7 @@ export default function Settings() {
   const [newRiderPhone, setNewRiderPhone] = useState('');
   const [showAddRider, setShowAddRider] = useState(false);
   const [isAddingRider, setIsAddingRider] = useState(false);
+  const [editingRider, setEditingRider] = useState(null);
   
   // Reset Data States
   const [showResetModal, setShowResetModal] = useState(false);
@@ -111,6 +112,7 @@ export default function Settings() {
     if (isAddingRider) return;
     setNewRiderName('');
     setNewRiderPhone('');
+    setEditingRider(null);
     setShowAddRider(false);
   };
 
@@ -122,25 +124,38 @@ export default function Settings() {
       return;
     }
 
-    console.log('Attempting to add rider:', { name: newRiderName.trim(), phone: newRiderPhone.trim() });
     setIsAddingRider(true);
     try {
-      const result = await riderService.addRider({
-        name: newRiderName.trim(),
-        phone: newRiderPhone.trim(),
-        status: 'Active',
-        joinedAt: new Date().toISOString()
-      });
-      console.log('Rider added successfully, doc ID:', result?.id);
+      if (editingRider) {
+        await riderService.updateRider(editingRider.id, {
+          name: newRiderName.trim(),
+          phone: newRiderPhone.trim()
+        });
+        toast.success('Rider details updated');
+      } else {
+        await riderService.addRider({
+          name: newRiderName.trim(),
+          phone: newRiderPhone.trim(),
+          status: 'Active',
+          joinedAt: new Date().toISOString()
+        });
+        toast.success('Rider added successfully');
+      }
 
       handleCloseAddRider();
-      toast.success('Rider added successfully');
     } catch (error) {
-      console.error('CRITICAL: Error adding rider to Firebase:', error);
+      console.error('Error saving rider:', error);
       toast.error(`Database Error: ${error.message || 'Check connection'}`);
     } finally {
       setIsAddingRider(false);
     }
+  };
+
+  const handleEditRider = (rider) => {
+    setEditingRider(rider);
+    setNewRiderName(rider.name);
+    setNewRiderPhone(rider.phone);
+    setShowAddRider(true);
   };
 
   const handleDeleteRider = async (id) => {
@@ -346,12 +361,22 @@ export default function Settings() {
                           </span>
                         </td>
                         <td className="px-6 py-4 text-right">
-                          <button
-                            onClick={() => handleDeleteRider(rider.id)}
-                            className="p-2 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleEditRider(rider)}
+                              className="p-2 text-slate-400 hover:text-primary dark:hover:text-primary transition-colors rounded-lg hover:bg-primary/5"
+                              title="Edit Rider"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRider(rider.id)}
+                              className="p-2 text-slate-400 hover:text-rose-500 dark:hover:text-rose-400 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                              title="Delete Rider"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -378,7 +403,7 @@ export default function Settings() {
         {showAddRider && (
           <Modal
             onClose={handleCloseAddRider}
-            title="New Rider"
+            title={editingRider ? "Edit Rider" : "New Rider"}
           >
             <form onSubmit={handleAddRider} className="space-y-6">
               <FormField label="Full Name" icon={User}>
@@ -417,7 +442,7 @@ export default function Settings() {
                   disabled={isAddingRider}
                   className="flex-1 bg-orange-600 hover:bg-orange-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-orange-600/20"
                 >
-                  {isAddingRider ? "Adding..." : "Add Rider"}
+                  {isAddingRider ? "Saving..." : editingRider ? "Update Rider" : "Add Rider"}
                 </Button>
               </div>
             </form>

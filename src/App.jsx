@@ -8,6 +8,8 @@ import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
 import Settings from './pages/Settings';
 import Calculator from './pages/Calculator';
+import Management from './pages/Management';
+import Profiles from './pages/Profiles';
 import Onboarding from './pages/Onboarding';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
@@ -47,6 +49,8 @@ function AppContent() {
         <Route path="analytics" element={<Analytics />} />
         <Route path="calculator" element={<Calculator />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="management" element={<Management />} />
+        <Route path="profiles" element={<Profiles />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

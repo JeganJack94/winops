@@ -37,7 +37,8 @@ export const riderService = {
   // Update rider details
   updateRider: async (riderId, riderData) => {
     const riderRef = doc(db, RIDER_COLLECTION, riderId);
-    return await updateDoc(riderRef, riderData);
+    const { id: _, ...updateData } = riderData;
+    return await updateDoc(riderRef, updateData);
   },
 
   // Delete a rider

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import {
   Truck, CheckCircle2, Clock, IndianRupee,
   PackageCheck, CalendarDays, TrendingUp, ArrowUpRight,
+  Share2
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
@@ -136,11 +137,19 @@ export default function Dashboard() {
     const overallReceived = allRecords.reduce(
       (acc, e) => acc + (Number(e.receivedDelivery) || 0) + (Number(e.receivedPickup) || 0), 0
     );
-    const monthlyReceived = allRecords
-      .filter(e => e.date && e.date.startsWith(currentMonth))
-      .reduce((acc, e) => acc + (Number(e.receivedDelivery) || 0) + (Number(e.receivedPickup) || 0), 0);
+    const overallDelivered = allRecords.reduce(
+      (acc, e) => acc + (Number(e.totalCompleted) || 0), 0
+    );
 
-    return { overallReceived, monthlyReceived };
+    const monthlyRecords = allRecords.filter(e => e.date && e.date.startsWith(currentMonth));
+    const monthlyReceived = monthlyRecords.reduce(
+      (acc, e) => acc + (Number(e.receivedDelivery) || 0) + (Number(e.receivedPickup) || 0), 0
+    );
+    const monthlyDelivered = monthlyRecords.reduce(
+      (acc, e) => acc + (Number(e.totalCompleted) || 0), 0
+    );
+
+    return { overallReceived, overallDelivered, monthlyReceived, monthlyDelivered };
   }, [allRecords, currentMonth]);
 
   /* ──── 2×2 stat cards ──── */
@@ -217,6 +226,29 @@ export default function Dashboard() {
 
   const recentExpenses = useMemo(() => expenses.slice(0, 5), [expenses]);
 
+  const shareRiderPerformance = () => {
+    const todayRecord = allRecords.find(r => r.date === today);
+    if (!todayRecord || !todayRecord.riders || todayRecord.riders.length === 0) {
+      alert("No performance data available for today yet.");
+      return;
+    }
+
+    const dateStr = new Date().toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const riderLines = todayRecord.riders.map(r => {
+      return `• ${r.riderName}: ${r.successRate}%`;
+    }).join('\n');
+
+    const text = `*Win Express – Rider Performance*\nDate: ${dateStr}\n\n${riderLines}\n\n*Overall Success Rate: ${todayRecord.successRate || 0}%*`;
+    
+    const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -237,17 +269,17 @@ export default function Dashboard() {
       {/* ── Top 2 summary cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <SummaryCard
-          title="Overall Count"
-          subtitle="Total received since the beginning"
-          value={summaryStats.overallReceived.toLocaleString('en-IN')}
+          title="Overall Received / Delivered"
+          subtitle="Total volume since the beginning"
+          value={`${summaryStats.overallReceived.toLocaleString('en-IN')} / ${summaryStats.overallDelivered.toLocaleString('en-IN')}`}
           icon={PackageCheck}
           accent="#6366f1"
           delay={0.05}
         />
         <SummaryCard
-          title="Monthly Count"
-          subtitle={`Received this month (${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})`}
-          value={summaryStats.monthlyReceived.toLocaleString('en-IN')}
+          title="Monthly Received / Delivered"
+          subtitle={`Volume this month (${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})`}
+          value={`${summaryStats.monthlyReceived.toLocaleString('en-IN')} / ${summaryStats.monthlyDelivered.toLocaleString('en-IN')}`}
           icon={CalendarDays}
           accent="#0ea5e9"
           delay={0.1}
@@ -271,8 +303,15 @@ export default function Dashboard() {
       {/* ── Chart + Recent Expenses ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
-          <CardHeader>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle>Today's Rider Performance</CardTitle>
+            <button
+               onClick={shareRiderPerformance}
+               className="p-2 text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors cursor-pointer"
+               title="Share Performance via WhatsApp"
+            >
+              <Share2 size={18} />
+            </button>
           </CardHeader>
           <CardContent>
             <div className="h-[300px] w-full mt-4">

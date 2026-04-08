@@ -2,6 +2,7 @@ import { db } from './firebase';
 import { 
   collection, 
   addDoc, 
+  updateDoc,
   deleteDoc,
   doc,
   onSnapshot,
@@ -23,6 +24,12 @@ export const expenseService = {
   deleteExpense: async (id) => {
     const docRef = doc(db, EXPENSE_COLLECTION, id);
     return await deleteDoc(docRef);
+  },
+
+  updateExpense: async (id, data) => {
+    const docRef = doc(db, EXPENSE_COLLECTION, id);
+    const { id: _, ...updateData } = data; // Strip id from payload
+    return await updateDoc(docRef, updateData);
   },
 
   subscribeToExpenses: (callback, limitCount = 50) => {

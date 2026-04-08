@@ -286,17 +286,24 @@ export default function Delivery() {
   };
 
   const shareWhatsApp = () => {
+    const dateStr = new Date(activeDate).toLocaleDateString('en-IN', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
+
+    const tableHeader = `Rider | Assigned | Completed | Success |\n-------------------------------------------`;
     const ridersList = currentRiders.map(r => {
       const assigned = (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
       const completed = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
-      return `${r.riderName} | Assigned: ${assigned} | Completed: ${completed} |`;
+      return `${r.riderName} | ${assigned} | ${completed} | ${r.successRate}% |`;
     }).join('\n');
 
-    const totalAssigned = (Number(totalAssignedDelivery) || 0) + (Number(totalAssignedPickup) || 0);
-    const totalCompleted = (Number(totalCompletedDelivery) || 0) + (Number(totalCompletedPickup) || 0);
+    const totalAssignedValue = (Number(totalAssignedDelivery) || 0) + (Number(totalAssignedPickup) || 0);
+    const totalCompletedValue = (Number(totalCompletedDelivery) || 0) + (Number(totalCompletedPickup) || 0);
     const totalPending = (Number(pendingDelivery) || 0) + (Number(pendingPickup) || 0);
 
-    const text = `*Win Express – Daily Report* \nDate: ${activeDate}\n\n${ridersList}\n\n*Total:* Assigned: ${totalAssigned} \nCompleted: ${totalCompleted} \nPending: ${totalPending} |\nAmount Collected: ₹${totalAmountCollected} \nSuccess Rate: ${overallSuccessRate}%`;
+    const text = `*Win Express – Daily Report*\nDate: ${dateStr}\n\n${tableHeader}\n${ridersList}\n\n*Total:* Assigned: ${totalAssignedValue}\nCompleted: ${totalCompletedValue}\nPending: ${totalPending} |\nAmount Collected: ₹${totalAmountCollected}\nSuccess Rate: ${overallSuccessRate}%`;
     
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
