@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
-import { Download, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign, Package, PieChart, FileText, Banknote } from 'lucide-react';
+import { Download, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign, Package, PieChart, FileText, Banknote, CheckCircle2, IndianRupee } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
 import { settingsService } from '../services/settingsService';
@@ -57,6 +57,7 @@ export default function Reports() {
   const [expenses, setExpenses] = useState([]);
   const [settings, setSettings] = useState({ ratePerParcel: 18 });
   const [isExporting, setIsExporting] = useState(false);
+  const [trendGranularity, setTrendGranularity] = useState('daily'); // daily, weekly, monthly
 
   useEffect(() => {
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
@@ -111,35 +112,44 @@ export default function Reports() {
   }, [dateRange, allRecords, expenses]);
 
   const metrics = useMemo(() => {
-    const totalParcels = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalCompleted) || 0), 0);
+    const totalReceived = filteredData.records.reduce((acc, curr) => 
+      acc + (Number(curr.receivedDelivery) || 0) + (Number(curr.receivedPickup) || 0), 0);
+    const totalDelivered = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalCompleted) || 0), 0);
     const totalCollections = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
     const totalExp = filteredData.expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
     
     // Revenue is based on parcels delivered
-    const totalRevenue = totalParcels * (Number(settings.ratePerParcel) || 18);
+    const totalRevenue = totalDelivered * (Number(settings.ratePerParcel) || 18);
     const netProfit = totalRevenue - totalExp;
 
     return [
       { 
-        label: 'Total Parcels', 
-        value: totalParcels.toLocaleString(), 
+        label: 'Parcels Received', 
+        value: totalReceived.toLocaleString(), 
         icon: Package, 
-        color: 'blue',
-        gradient: 'from-blue-500/10 to-indigo-500/10'
+        color: 'indigo',
+        gradient: 'from-indigo-500/10 to-blue-500/10'
+      },
+      { 
+        label: 'Parcels Delivered', 
+        value: totalDelivered.toLocaleString(), 
+        icon: CheckCircle2, 
+        color: 'emerald',
+        gradient: 'from-emerald-500/10 to-teal-500/10'
       },
       { 
         label: 'Total Collections', 
         value: `₹${totalCollections.toLocaleString()}`, 
         icon: Banknote, 
-        color: 'emerald',
-        gradient: 'from-emerald-500/10 to-teal-500/10'
+        color: 'blue',
+        gradient: 'from-blue-500/10 to-indigo-500/10'
       },
       { 
         label: 'Operational Revenue', 
         value: `₹${totalRevenue.toLocaleString()}`, 
-        icon: DollarSign, 
-        color: 'blue',
-        gradient: 'from-blue-500/10 to-indigo-500/10'
+        icon: IndianRupee, 
+        color: 'emerald',
+        gradient: 'from-teal-500/10 to-emerald-500/10'
       },
       { 
         label: 'Total Expenses', 
@@ -159,26 +169,48 @@ export default function Reports() {
   }, [filteredData, settings]);
 
   const trendData = useMemo(() => {
-    const revenueByDate = filteredData.records.reduce((acc, curr) => {
-      // Use revenue (parcels * rate) for trend
-      acc[curr.date] = (acc[curr.date] || 0) + ((Number(curr.totalCompleted) || 0) * (Number(settings.ratePerParcel) || 18));
+    const rate = Number(settings.ratePerParcel) || 18;
+    
+    // Grouping helper
+    const getGroupKey = (dateStr) => {
+      const date = new Date(dateStr);
+      if (trendGranularity === 'monthly') {
+        return date.toLocaleString('default', { month: 'short', year: '2-digit' });
+      }
+      if (trendGranularity === 'weekly') {
+        // Simple week grouping: find the Monday of that week
+        const day = date.getDay();
+        const diff = date.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(date.setDate(diff));
+        return monday.toLocaleDateString('default', { day: '2-digit', month: 'short' });
+      }
+      return dateStr.split('-').slice(1).join('/'); // MM/DD
+    };
+
+    const aggregated = filteredData.records.reduce((acc, curr) => {
+      const key = getGroupKey(curr.date);
+      if (!acc[key]) acc[key] = { revenue: 0, expenses: 0 };
+      acc[key].revenue += (Number(curr.totalCompleted) || 0) * rate;
       return acc;
     }, {});
 
-    const expensesByDate = filteredData.expenses.reduce((acc, curr) => {
-      acc[curr.date] = (acc[curr.date] || 0) + (Number(curr.amount) || 0);
-      return acc;
-    }, {});
+    filteredData.expenses.forEach(exp => {
+      const key = getGroupKey(exp.date);
+      if (!aggregated[key]) aggregated[key] = { revenue: 0, expenses: 0 };
+      aggregated[key].expenses += (Number(exp.amount) || 0);
+    });
 
-    const allDates = Array.from(new Set([...Object.keys(revenueByDate), ...Object.keys(expensesByDate)])).sort();
-    const labels = allDates.map(d => d.split('-').slice(1).join('/'));
+    const labels = Object.keys(aggregated).sort((a, b) => {
+      if (trendGranularity === 'daily') return a.localeCompare(b);
+      return 0; // Maintain insertion order or better sort if needed
+    });
 
     return {
       labels: labels.length > 0 ? labels : ['No Data'],
       datasets: [
         {
           label: 'Revenue',
-          data: allDates.map(d => revenueByDate[d] || 0),
+          data: labels.map(l => aggregated[l].revenue),
           borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.1)',
           fill: true,
@@ -188,7 +220,7 @@ export default function Reports() {
         },
         {
           label: 'Expenses',
-          data: allDates.map(d => expensesByDate[d] || 0),
+          data: labels.map(l => aggregated[l].expenses),
           borderColor: '#f43f5e',
           backgroundColor: 'rgba(244, 63, 94, 0.1)',
           fill: true,
@@ -198,7 +230,7 @@ export default function Reports() {
         }
       ]
     };
-  }, [filteredData, settings]);
+  }, [filteredData, settings, trendGranularity]);
 
   const handleExport = async () => {
     setIsExporting(true);
@@ -227,7 +259,7 @@ export default function Reports() {
       doc.setFontSize(10);
       metrics.forEach((m, i) => {
         const xPos = 20 + (i % 2) * (pageWidth / 2 - 20);
-        const yPos = 56 + Math.floor(i / 2) * 10;
+        const yPos = 56 + Math.floor(i / 2) * 8; // Tighter spacing for 6 metrics
         doc.text(`${m.label}: ${m.value}`, xPos, yPos);
       });
 
@@ -338,8 +370,8 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Stats Grid - 2x2 as requested */}
-      <div className="grid grid-cols-2 gap-4 sm:gap-6">
+      {/* Stats Grid - 3x2 on large screens */}
+      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {metrics.map((metric, i) => (
           <motion.div key={i} variants={itemVariants}>
             <Card className={`relative overflow-hidden border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 group hover:translate-y-[-4px] transition-all duration-300`}>
@@ -379,7 +411,18 @@ export default function Reports() {
                 Visualizing cash flow over the selected period
               </p>
             </div>
-            <div className="hidden sm:flex items-center gap-4">
+            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl">
+              {['daily', 'weekly', 'monthly'].map(g => (
+                <button 
+                  key={g}
+                  onClick={() => setTrendGranularity(g)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${trendGranularity === g ? 'bg-white dark:bg-slate-600 text-primary shadow-sm' : 'text-slate-500'}`}
+                >
+                  {g}
+                </button>
+              ))}
+            </div>
+            <div className="hidden lg:flex items-center gap-4">
               <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
                 <div className="w-3 h-3 rounded-full bg-emerald-500" />
                 Revenue

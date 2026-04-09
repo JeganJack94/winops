@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 import { 
   LayoutDashboard, Receipt, Truck, IndianRupee, 
   FileBarChart, PieChart, Calculator, Settings, 
-  Menu, ChevronLeft, X, ShieldCheck, Users
+  Menu, ChevronLeft, X, ShieldCheck, Users, ClipboardCheck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -14,6 +14,7 @@ const productionNav = [
   { name: 'Calculator', to: '/calculator', icon: Calculator },
   { name: 'Reports', to: '/reports', icon: FileBarChart },
   { name: 'Analytics', to: '/analytics', icon: PieChart },
+  { name: 'CheckList', to: '/checklist', icon: ClipboardCheck },
 ];
 
 const managementNav = [

@@ -292,18 +292,30 @@ export default function Delivery() {
       year: 'numeric'
     });
 
-    const tableHeader = `Rider | Assigned | Completed | Success |\n-------------------------------------------`;
-    const ridersList = currentRiders.map(r => {
-      const assigned = (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
-      const completed = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
-      return `${r.riderName} | ${assigned} | ${completed} | ${r.successRate}% |`;
-    }).join('\n');
-
     const totalAssignedValue = (Number(totalAssignedDelivery) || 0) + (Number(totalAssignedPickup) || 0);
     const totalCompletedValue = (Number(totalCompletedDelivery) || 0) + (Number(totalCompletedPickup) || 0);
     const totalPending = (Number(pendingDelivery) || 0) + (Number(pendingPickup) || 0);
 
-    const text = `*Win Express – Daily Report*\nDate: ${dateStr}\n\n${tableHeader}\n${ridersList}\n\n*Total:* Assigned: ${totalAssignedValue}\nCompleted: ${totalCompletedValue}\nPending: ${totalPending} |\nAmount Collected: ₹${totalAmountCollected}\nSuccess Rate: ${overallSuccessRate}%`;
+    // Format riders into a clean table
+    const tableHeader = `*RIDER*      | *ASS* | *CMP* | *SR%*`;
+    const separator = `----------------------------`;
+    
+    const ridersList = currentRiders.map(r => {
+      const assigned = (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
+      const completed = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
+      
+      // Pad name for semi-alignment (works best on most common fonts)
+      const name = r.riderName.length > 10 ? r.riderName.substring(0, 9) + '.' : r.riderName.padEnd(10);
+      return `${name} | ${String(assigned).padStart(3)} | ${String(completed).padStart(3)} | ${r.successRate}%`;
+    }).join('\n');
+
+    // Hub Header
+    const header = `*Win Express – Daily Report*\nDate: ${dateStr}\n`;
+    
+    // Performance Summary
+    const summary = `----------------------------\n*OVERALL SUMMARY*:\n----------------------------\n📦 Total Assigned: ${totalAssignedValue}\n✅ Total Completed: ${totalCompletedValue}\n⏳ Total Pending: ${totalPending}\n💰 Cash Collected: ₹${totalAmountCollected.toLocaleString()}\n🎯 Success Rate: ${overallSuccessRate}%\n----------------------------`;
+
+    const text = `${header}\n${tableHeader}\n${separator}\n${ridersList}\n\n${summary}`;
     
     const url = `https://wa.me/?text=${encodeURIComponent(text)}`;
     window.open(url, '_blank');
