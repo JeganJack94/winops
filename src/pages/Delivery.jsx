@@ -40,7 +40,9 @@ export default function Delivery() {
     completedPickup: 0,
     amountCollected: 0,
     cashAmount: 0,
-    upiAmount: 0
+    upiAmount: 0,
+    actualRiderId: '',
+    actualRiderName: ''
   });
 
   useEffect(() => {
@@ -282,10 +284,15 @@ export default function Delivery() {
     setRiderForm({
       riderId: '',
       riderName: '',
+      assignedDelivery: 0,
+      assignedPickup: 0,
+      completedDelivery: 0,
       completedPickup: 0,
       amountCollected: 0,
       cashAmount: 0,
-      upiAmount: 0
+      upiAmount: 0,
+      actualRiderId: '',
+      actualRiderName: ''
     });
     setEditingRiderIndex(null);
     setShowRiderModal(false);
@@ -319,7 +326,8 @@ export default function Delivery() {
     const header = `*Win Express – Daily Report*\nDate: ${dateStr}\n`;
     
     // Performance Summary
-    const summary = `----------------------------\n*OVERALL SUMMARY*:\n----------------------------\n📦 Total Assigned: ${totalAssignedValue}\n✅ Total Completed: ${totalCompletedValue}\n⏳ Total Pending: ${totalPending}\n💰 Cash: ₹${totalCashCollected.toLocaleString()}\n💳 UPI: ₹${totalUpiCollected.toLocaleString()}\n💎 Total Collection: ₹${totalAmountCollected.toLocaleString()}\n🎯 Success Rate: ${overallSuccessRate}%\n----------------------------`;
+    const summary = `----------------------------\n*OVERALL SUMMARY*:\n----------------------------\n📦 Total Assigned: ${totalAssignedValue}\n✅ Total Completed: ${totalCompletedValue}\n⏳ Total Pending: ${totalPending}\n💰 Total Collection: ₹${totalAmountCollected.toLocaleString()}\n🎯 Success Rate: ${overallSuccessRate}%\n----------------------------`;
+
 
     const text = `${header}\n${tableHeader}\n${separator}\n${ridersList}\n\n${summary}`;
     
@@ -444,7 +452,16 @@ export default function Delivery() {
 
                       return (
                         <tr key={i} className="group hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
-                          <td className="px-5 py-4 font-bold text-gray-900 dark:text-white">{r.riderName}</td>
+                          <td className="px-5 py-4 font-bold text-gray-900 dark:text-white">
+                            <div className="flex flex-col">
+                              <span>{r.riderName}</span>
+                              {r.actualRiderId && r.actualRiderId !== r.riderId && (
+                                <span className="text-[10px] bg-amber-100 dark:bg-amber-400/10 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded font-bold w-fit mt-0.5">
+                                  via {r.actualRiderName}
+                                </span>
+                              )}
+                            </div>
+                          </td>
                           <td className="px-5 py-4 text-center font-mono font-medium">
                             {r.assignedDelivery} <span className="text-gray-300 dark:text-gray-600">/</span> {r.assignedPickup}
                           </td>
@@ -557,20 +574,61 @@ export default function Delivery() {
               </div>
               <form onSubmit={handleRiderSubmit} className="p-6 space-y-4">
                 <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-gray-500">Select Rider</label>
+                  <label className="text-xs font-bold uppercase text-gray-500">ID / Assigned Rider</label>
                   <select 
-                     className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none"
+                     className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
                      required
                      value={riderForm.riderId}
                      onChange={(e) => {
                        const sel = riders.find(r => r.id === e.target.value);
-                       setRiderForm({...riderForm, riderId: e.target.value, riderName: sel?.name || ''});
+                       setRiderForm({...riderForm, riderId: e.target.value, riderName: sel?.name || '', actualRiderId: '', actualRiderName: ''});
                      }}
                   >
                     <option value="">-- Choose Rider --</option>
                     {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                   </select>
                 </div>
+
+                {riderForm.riderId && (
+                  <div className="space-y-2 p-3 bg-amber-50 dark:bg-amber-400/5 border border-amber-100 dark:border-amber-400/20 rounded-2xl">
+                    <label className="text-xs font-black uppercase text-amber-700 dark:text-amber-400">Actually Delivered By</label>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setRiderForm({...riderForm, actualRiderId: '', actualRiderName: ''})}
+                        className={`flex-1 py-2 rounded-xl font-bold text-sm border transition-all ${
+                          !riderForm.actualRiderId
+                            ? 'bg-primary text-white border-primary shadow-sm'
+                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
+                        }`}
+                      >
+                        Own (Self)
+                      </button>
+                      <select
+                        className={`flex-1 rounded-xl px-3 py-2 outline-none text-sm font-bold border transition-all ${
+                          riderForm.actualRiderId
+                            ? 'bg-amber-600 text-white border-amber-600'
+                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
+                        }`}
+                        value={riderForm.actualRiderId}
+                        onChange={(e) => {
+                          const sel = riders.find(r => r.id === e.target.value);
+                          setRiderForm({...riderForm, actualRiderId: e.target.value, actualRiderName: sel?.name || ''});
+                        }}
+                      >
+                        <option value="">Substitute...</option>
+                        {riders.filter(r => r.id !== riderForm.riderId).map(r => (
+                          <option key={r.id} value={r.id}>{r.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {riderForm.actualRiderId && (
+                      <p className="text-xs text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
+                        ⚡ Salary will be credited to <strong>{riderForm.actualRiderName}</strong>
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div className="p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">

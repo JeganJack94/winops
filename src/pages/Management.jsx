@@ -9,6 +9,10 @@ import { useToast } from '../hooks/useToast';
 import { useTheme } from '../context/ThemeContext';
 import { managementService } from '../services/managementService';
 import { expenseService } from '../services/expenseService';
+import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
+import { Bar } from 'react-chartjs-2';
+
+ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const TABS = [
   { id: 'investments', name: 'Investments', icon: Landmark },
@@ -304,6 +308,19 @@ export default function Management() {
                         className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none" 
                       />
                     )}
+                    {modalType === 'investment' && (
+                      <select 
+                        required
+                        value={form.category || 'Misc'}
+                        onChange={e => setForm({...form, category: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none"
+                      >
+                        <option value="" disabled>Select Category</option>
+                        {['Transport', 'Infrastructure', 'Stationery', 'Equipments', 'Deposits', 'Misc'].map(t => (
+                          <option key={t} value={t}>{t}</option>
+                        ))}
+                      </select>
+                    )}
                     {modalType === 'expense' && (
                       <select 
                         required
@@ -367,17 +384,66 @@ function InvestmentsView({ items, onAdd, onToggle, onAddRecovery, onEdit, onDele
   const totalOpen = items.filter(i => i.status === 'Open').reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const totalClosed = items.filter(i => i.status === 'Closed').reduce((s, i) => s + (Number(i.amount) || 0), 0);
 
+  const categoriesData = useMemo(() => {
+    const cats = { Transport: 0, Infrastructure: 0, Stationery: 0, Equipments: 0, Deposits: 0, Misc: 0 };
+    items.forEach(i => {
+      const c = i.category || 'Misc';
+      if (cats[c] !== undefined) cats[c] += Number(i.amount) || 0;
+      else cats['Misc'] += Number(i.amount) || 0;
+    });
+    return Object.keys(cats).map(k => ({ name: k, value: cats[k] })).filter(c => c.value > 0);
+  }, [items]);
+
+  const chartData = {
+    labels: categoriesData.map(c => c.name),
+    datasets: [
+      {
+        label: 'Invested',
+        data: categoriesData.map(c => c.value),
+        backgroundColor: [
+          '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#64748b'
+        ],
+        borderRadius: 4
+      }
+    ]
+  };
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-3xl border border-blue-100 dark:border-blue-900/30">
-          <p className="text-[10px] uppercase font-black text-blue-600 mb-1">Total Active</p>
-          <p className="text-2xl font-black text-blue-900 dark:text-blue-100">₹{totalOpen.toLocaleString()}</p>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="flex flex-col gap-4">
+          <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-3xl border border-blue-100 dark:border-blue-900/30 flex-1 flex flex-col justify-center">
+            <p className="text-[10px] uppercase font-black text-blue-600 mb-1">Total Active</p>
+            <p className="text-2xl font-black text-blue-900 dark:text-blue-100">₹{totalOpen.toLocaleString()}</p>
+          </div>
+          <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-3xl border border-emerald-100 dark:border-emerald-900/30 flex-1 flex flex-col justify-center">
+            <p className="text-[10px] uppercase font-black text-emerald-600 mb-1">Total Closed</p>
+            <p className="text-2xl font-black text-emerald-900 dark:text-emerald-100">₹{totalClosed.toLocaleString()}</p>
+          </div>
         </div>
-        <div className="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-3xl border border-emerald-100 dark:border-emerald-900/30">
-          <p className="text-[10px] uppercase font-black text-emerald-600 mb-1">Total Closed</p>
-          <p className="text-2xl font-black text-emerald-900 dark:text-emerald-100">₹{totalClosed.toLocaleString()}</p>
-        </div>
+
+        {categoriesData.length > 0 ? (
+          <div className="md:col-span-2 bg-white dark:bg-gray-800/50 p-5 rounded-3xl border border-gray-100 dark:border-gray-800 flex flex-col">
+            <h3 className="font-bold mb-2 self-start text-gray-500 uppercase tracking-widest text-xs">Categories Overview</h3>
+            <div className="flex-1 w-full min-h-[160px]">
+              <Bar 
+                data={chartData} 
+                options={{ 
+                  plugins: { legend: { display: false } }, 
+                  maintainAspectRatio: false,
+                  scales: { 
+                    y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } } },
+                    x: { grid: { display: false }, ticks: { font: { size: 10 } } }
+                  }
+                }} 
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="md:col-span-2 bg-white dark:bg-gray-800/50 p-5 rounded-3xl border border-gray-100 dark:border-gray-800 flex flex-col justify-center items-center text-gray-400">
+            <p className="text-sm font-bold">No categorical data yet</p>
+          </div>
+        )}
       </div>
 
       <div className="bg-white dark:bg-gray-800/50 rounded-3xl border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
@@ -400,7 +466,10 @@ function InvestmentsView({ items, onAdd, onToggle, onAddRecovery, onEdit, onDele
                     </div>
                     <div>
                       <p className="font-bold text-gray-900 dark:text-white capitalize">{item.description}</p>
-                      <p className="text-xs text-gray-500 font-medium">{item.date}</p>
+                      <p className="text-xs text-gray-500 font-medium mt-1">
+                        <span className="bg-primary/10 text-primary px-1.5 py-0.5 rounded mr-2 font-bold tracking-wide">{item.category || 'Misc'}</span>
+                        {item.date}
+                      </p>
                     </div>
                   </div>
                   <div className="text-right flex items-center gap-4">

@@ -72,6 +72,7 @@ export default function Settings() {
   const [riders, setRiders] = useState([]);
   const [newRiderName, setNewRiderName] = useState('');
   const [newRiderPhone, setNewRiderPhone] = useState('');
+  const [newRiderRate, setNewRiderRate] = useState('');
   const [showAddRider, setShowAddRider] = useState(false);
   const [isAddingRider, setIsAddingRider] = useState(false);
   const [editingRider, setEditingRider] = useState(null);
@@ -112,6 +113,7 @@ export default function Settings() {
     if (isAddingRider) return;
     setNewRiderName('');
     setNewRiderPhone('');
+    setNewRiderRate('');
     setEditingRider(null);
     setShowAddRider(false);
   };
@@ -129,7 +131,8 @@ export default function Settings() {
       if (editingRider) {
         await riderService.updateRider(editingRider.id, {
           name: newRiderName.trim(),
-          phone: newRiderPhone.trim()
+          phone: newRiderPhone.trim(),
+          ...(newRiderRate !== '' && { ratePerParcel: Number(newRiderRate) })
         });
         toast.success('Rider details updated');
       } else {
@@ -137,7 +140,8 @@ export default function Settings() {
           name: newRiderName.trim(),
           phone: newRiderPhone.trim(),
           status: 'Active',
-          joinedAt: new Date().toISOString()
+          joinedAt: new Date().toISOString(),
+          ...(newRiderRate !== '' && { ratePerParcel: Number(newRiderRate) })
         });
         toast.success('Rider added successfully');
       }
@@ -155,6 +159,7 @@ export default function Settings() {
     setEditingRider(rider);
     setNewRiderName(rider.name);
     setNewRiderPhone(rider.phone);
+    setNewRiderRate(rider.ratePerParcel !== undefined ? String(rider.ratePerParcel) : '');
     setShowAddRider(true);
   };
 
@@ -333,6 +338,7 @@ export default function Settings() {
                     <tr>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Name</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Phone</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">Rate (₹/parcel)</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Actions</th>
                     </tr>
@@ -350,6 +356,13 @@ export default function Settings() {
                         </td>
                         <td className="px-6 py-4 text-sm text-slate-500 dark:text-slate-400 font-medium">
                           {rider.phone}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          {rider.ratePerParcel !== undefined ? (
+                            <span className="bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-xs font-black px-3 py-1 rounded-lg">₹{rider.ratePerParcel}/px</span>
+                          ) : (
+                            <span className="text-xs text-slate-400 font-medium italic">Using Global</span>
+                          )}
                         </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tight ${rider.status === 'Active'
@@ -425,6 +438,21 @@ export default function Settings() {
                   required
                   className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm focus:ring-orange-500"
                 />
+              </FormField>
+
+              <FormField label="Rate per Parcel (₹)" icon={IndianRupee}>
+                <div className="relative">
+                  <Input
+                    type="number"
+                    step="0.5"
+                    min="0"
+                    placeholder={`Global default (₹${settings.ratePerParcel || 12})`}
+                    value={newRiderRate}
+                    onChange={(e) => setNewRiderRate(e.target.value)}
+                    className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm focus:ring-orange-500"
+                  />
+                </div>
+                <p className="text-[11px] text-slate-400 mt-1">Leave blank to use the global default rate.</p>
               </FormField>
 
               <div className="pt-4 flex gap-3">
