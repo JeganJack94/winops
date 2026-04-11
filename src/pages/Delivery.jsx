@@ -31,7 +31,6 @@ export default function Delivery() {
   // Modal States
   const [showRiderModal, setShowRiderModal] = useState(false);
   const [editingRiderIndex, setEditingRiderIndex] = useState(null);
-
   const [riderForm, setRiderForm] = useState({
     riderId: '',
     riderName: '',
@@ -39,7 +38,9 @@ export default function Delivery() {
     assignedPickup: 0,
     completedDelivery: 0,
     completedPickup: 0,
-    amountCollected: 0
+    amountCollected: 0,
+    cashAmount: 0,
+    upiAmount: 0
   });
 
   useEffect(() => {
@@ -126,7 +127,9 @@ export default function Delivery() {
   const totalCompletedPickup = currentRiders.reduce((sum, r) => sum + Number(r.completedPickup), 0);
   const totalCompleted = totalCompletedDelivery + totalCompletedPickup;
 
-  const totalAmountCollected = currentRiders.reduce((sum, r) => sum + Number(r.amountCollected), 0);
+  const totalAmountCollected = currentRiders.reduce((sum, r) => sum + Number(r.amountCollected || 0), 0);
+  const totalCashCollected = currentRiders.reduce((sum, r) => sum + Number(r.cashAmount || 0), 0);
+  const totalUpiCollected = currentRiders.reduce((sum, r) => sum + Number(r.upiAmount || 0), 0);
   const overallSuccessRate = totalAssigned > 0 ? Math.round((totalCompleted / totalAssigned) * 100) : 0;
   
   // Also calculate total pending parcels including the ones NOT assigned
@@ -148,11 +151,10 @@ export default function Delivery() {
       totalPickup: totalParcelsPickup,
       total: totalParcels,
       totalAssigned,
-      totalCompleted,
-      totalPendingDelivery: pendingDelivery,
-      totalPendingPickup: pendingPickup,
-      totalPending: overallCalculatedPending, // Total Pending for next day
+      totalPending: overallCalculatedPending,
       totalAmount: totalAmountCollected,
+      totalCash: totalCashCollected,
+      totalUpi: totalUpiCollected,
       successRate: overallSuccessRate,
       riders: currentRiders
     };
@@ -178,6 +180,9 @@ export default function Delivery() {
     const compPick = Number(riderForm.completedPickup);
     const totalAss = assignedDel + assignedPick;
     const totalComp = compDel + compPick;
+    const cash = Number(riderForm.cashAmount || 0);
+    const upi = Number(riderForm.upiAmount || 0);
+    const totalColl = cash + upi;
     
     const riderEntry = {
       ...riderForm,
@@ -185,8 +190,10 @@ export default function Delivery() {
       assignedPickup: assignedPick,
       completedDelivery: compDel,
       completedPickup: compPick,
-      amountCollected: Number(riderForm.amountCollected),
-      failed: totalAss - totalComp,
+      cashAmount: cash,
+      upiAmount: upi,
+      amountCollected: totalColl,
+      failed: Math.max(0, totalAss - totalComp),
       successRate: totalAss > 0 ? Math.round((totalComp / totalAss) * 100) : 0
     };
 
@@ -275,11 +282,10 @@ export default function Delivery() {
     setRiderForm({
       riderId: '',
       riderName: '',
-      assignedDelivery: 0,
-      assignedPickup: 0,
-      completedDelivery: 0,
       completedPickup: 0,
-      amountCollected: 0
+      amountCollected: 0,
+      cashAmount: 0,
+      upiAmount: 0
     });
     setEditingRiderIndex(null);
     setShowRiderModal(false);
@@ -313,7 +319,7 @@ export default function Delivery() {
     const header = `*Win Express – Daily Report*\nDate: ${dateStr}\n`;
     
     // Performance Summary
-    const summary = `----------------------------\n*OVERALL SUMMARY*:\n----------------------------\n📦 Total Assigned: ${totalAssignedValue}\n✅ Total Completed: ${totalCompletedValue}\n⏳ Total Pending: ${totalPending}\n💰 Cash Collected: ₹${totalAmountCollected.toLocaleString()}\n🎯 Success Rate: ${overallSuccessRate}%\n----------------------------`;
+    const summary = `----------------------------\n*OVERALL SUMMARY*:\n----------------------------\n📦 Total Assigned: ${totalAssignedValue}\n✅ Total Completed: ${totalCompletedValue}\n⏳ Total Pending: ${totalPending}\n💰 Cash: ₹${totalCashCollected.toLocaleString()}\n💳 UPI: ₹${totalUpiCollected.toLocaleString()}\n💎 Total Collection: ₹${totalAmountCollected.toLocaleString()}\n🎯 Success Rate: ${overallSuccessRate}%\n----------------------------`;
 
     const text = `${header}\n${tableHeader}\n${separator}\n${ridersList}\n\n${summary}`;
     
@@ -446,7 +452,15 @@ export default function Delivery() {
                             {r.completedDelivery} <span className="text-emerald-300 dark:text-emerald-800">/</span> {r.completedPickup}
                           </td>
                           <td className="px-5 py-4 text-center font-mono font-bold text-rose-500">{tFailed}</td>
-                          <td className="px-5 py-4 text-center font-mono font-black text-emerald-600">₹{r.amountCollected || 0}</td>
+                          <td className="px-5 py-4 text-center">
+                            <div className="flex flex-col items-center">
+                              <span className="font-mono font-black text-emerald-600">₹{r.amountCollected || 0}</span>
+                              <div className="flex gap-2 mt-1">
+                                <span className="text-[9px] font-bold text-gray-400 capitalize">C: {r.cashAmount || 0}</span>
+                                <span className="text-[9px] font-bold text-gray-400 capitalize">U: {r.upiAmount || 0}</span>
+                              </div>
+                            </div>
+                          </td>
                           <td className="px-5 py-4 text-center">
                             <span className={`px-2 py-1 rounded-md text-[11px] font-black ring-1 ring-inset ${ringColor}`}>
                               {ratio}%
@@ -474,8 +488,16 @@ export default function Delivery() {
                 <FooterStat label="Assignments (D/P)" value={`${totalAssignedDelivery}/${totalAssignedPickup}`} />
                 <FooterStat label="Completed (D/P)" value={`${totalCompletedDelivery}/${totalCompletedPickup}`} />
                 <FooterStat label="Pending (D/P)" value={`${pendingDelivery}/${pendingPickup}`} />
-                <FooterStat label="Amount" value={`₹${totalAmountCollected}`} valueColor="text-emerald-600 dark:text-emerald-400" />
-                <FooterStat label="Success %" value={`${overallSuccessRate}%`} valueColor={overallSuccessRate >= 90 ? 'text-emerald-600' : overallSuccessRate >= 80 ? 'text-amber-500' : 'text-rose-500'} />              </div>
+                <div className="flex flex-col justify-center border-l border-gray-200 dark:border-gray-800 pl-4">
+                  <p className="text-[10px] uppercase font-bold text-gray-400 mb-0.5">Collection</p>
+                  <p className="text-lg font-black text-emerald-600 tabular-nums">₹{totalAmountCollected.toLocaleString()}</p>
+                  <div className="flex gap-2 text-[9px] font-bold text-gray-500">
+                    <span>C: ₹{totalCashCollected.toLocaleString()}</span>
+                    <span>U: ₹{totalUpiCollected.toLocaleString()}</span>
+                  </div>
+                </div>
+                <FooterStat label="Success %" value={`${overallSuccessRate}%`} valueColor={overallSuccessRate >= 90 ? 'text-emerald-600' : overallSuccessRate >= 80 ? 'text-amber-500' : 'text-rose-500'} />
+              </div>
 
             </div>
           </div>
@@ -567,17 +589,38 @@ export default function Delivery() {
                   </div>
                 </div>
 
-                <div className="pt-2">
-                  <label className="text-xs font-bold uppercase text-gray-500">Amount Collected (COD + UPI)</label>
-                  <div className="relative mt-1">
-                    <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
-                    <input 
-                      type="number" 
-                      value={riderForm.amountCollected}
-                      onChange={e => setRiderForm({...riderForm, amountCollected: e.target.value})}
-                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-8 pr-4 py-3 outline-none font-mono font-bold"
-                    />
+                <div className="grid grid-cols-2 gap-4 pt-2">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-gray-500">Cash Amount</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₹</span>
+                      <input 
+                        type="number" 
+                        value={riderForm.cashAmount}
+                        onChange={e => setRiderForm({...riderForm, cashAmount: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-6 pr-3 py-2.5 outline-none font-mono font-bold text-sm"
+                      />
+                    </div>
                   </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-gray-500">UPI Amount</label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 font-bold text-xs">₹</span>
+                      <input 
+                        type="number" 
+                        value={riderForm.upiAmount}
+                        onChange={e => setRiderForm({...riderForm, upiAmount: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-6 pr-3 py-2.5 outline-none font-mono font-bold text-sm"
+                      />
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-900/30 flex justify-between items-center mt-2">
+                  <span className="text-xs font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-widest">Total to Collect:</span>
+                  <span className="text-xl font-black text-emerald-600 tabular-nums">
+                    ₹{(Number(riderForm.cashAmount || 0) + Number(riderForm.upiAmount || 0)).toLocaleString()}
+                  </span>
                 </div>
                 
                 <div className="bg-gray-50 dark:bg-gray-800 p-3 rounded-xl flex items-center justify-between mt-4">

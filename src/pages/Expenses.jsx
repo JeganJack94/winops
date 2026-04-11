@@ -1,7 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Trash2, X, Calendar, Tag, DollarSign, FileText, TrendingDown } from 'lucide-react';
+import { Search, Plus, Trash2, X, Calendar, Tag, DollarSign, FileText, TrendingDown, Edit2, Download, History, LayoutDashboard } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 import { expenseService } from '../services/expenseService';
+import { jsPDF } from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { Doughnut, Line } from 'react-chartjs-2';
+import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -14,8 +18,6 @@ import {
   Title,
   Filler
 } from 'chart.js';
-import { Doughnut, Line } from 'react-chartjs-2';
-import { useTheme } from '../context/ThemeContext';
 
 ChartJS.register(
   ArcElement, 
@@ -29,15 +31,22 @@ ChartJS.register(
   Filler
 );
 
-const EXPENSE_TYPES = ['Fuel', 'Salary', 'Maintenance', 'Utilities', 'Rent', 'Misc'];
+const EXPENSE_TYPES = [
+  'Fuel', 'Salary', 'Maintenance', 'Utilities', 'Rent', 
+  'Tea & Snacks', 'Recharge', 'Stationery', 'Infrastructure', 'Misc'
+];
 
 const TYPE_CONFIG = {
-  Fuel:        { color: '#f97316', bg: 'rgba(249,115,22,0.12)',  text: '#f97316' },
-  Salary:      { color: '#1e3a8a', bg: 'rgba(30,58,138,0.12)',   text: '#3b82f6' },
-  Maintenance: { color: '#10b981', bg: 'rgba(16,185,129,0.12)',  text: '#10b981' },
-  Utilities:   { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  text: '#8b5cf6' },
-  Rent:        { color: '#ec4899', bg: 'rgba(236,72,153,0.12)',  text: '#ec4899' },
-  Misc:        { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', text: '#9ca3af' },
+  Fuel:           { color: '#f97316', bg: 'rgba(249,115,22,0.12)',  text: '#f97316' },
+  Salary:         { color: '#1e3a8a', bg: 'rgba(30,58,138,0.12)',   text: '#3b82f6' },
+  Maintenance:    { color: '#10b981', bg: 'rgba(16,185,129,0.12)',  text: '#10b981' },
+  Utilities:      { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  text: '#8b5cf6' },
+  Rent:           { color: '#ec4899', bg: 'rgba(236,72,153,0.12)',  text: '#ec4899' },
+  'Tea & Snacks': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  text: '#f59e0b' },
+  Recharge:       { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   text: '#06b6d4' },
+  Stationery:     { color: '#6366f1', bg: 'rgba(99,102,241,0.12)',  text: '#6366f1' },
+  Infrastructure: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   text: '#ef4444' },
+  Misc:           { color: '#6b7280', bg: 'rgba(107,114,128,0.12)', text: '#9ca3af' },
 };
 
 export default function Expenses() {
@@ -47,7 +56,9 @@ export default function Expenses() {
   const [expenses, setExpenses] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [timeframe, setTimeframe] = useState('weekly'); // 'daily', 'weekly', 'monthly'
+  const [timeframe, setTimeframe] = useState('weekly'); 
+  const [editingId, setEditingId] = useState(null);
+  const [isExporting, setIsExporting] = useState(false);
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -57,11 +68,10 @@ export default function Expenses() {
   });
 
   useEffect(() => {
-    const unsub = expenseService.subscribeToExpenses(setExpenses);
+    const unsub = expenseService.subscribeToExpenses(setExpenses, 1000);
     return () => unsub();
   }, []);
 
-  // Lock body scroll when modal is open
   useEffect(() => {
     if (showModal) {
       document.body.style.overflow = 'hidden';
@@ -75,27 +85,44 @@ export default function Expenses() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      await expenseService.addExpense({
+      const expenseData = {
         ...form,
         amount: Number(form.amount)
-      });
+      };
+
+      if (editingId) {
+        await expenseService.updateExpense(editingId, expenseData);
+        toast.success('Expense updated successfully');
+      } else {
+        await expenseService.addExpense(expenseData);
+        toast.success('Expense added successfully');
+      }
+
       setForm({
         date: new Date().toISOString().split('T')[0],
         type: 'Fuel',
         amount: '',
         notes: ''
       });
+      setEditingId(null);
       setShowModal(false);
-      console.log('Expense added, closing modal');
-      setTimeout(() => {
-        toast.success('Expense added successfully');
-      }, 0);
     } catch (error) {
-      console.error('Error adding expense:', error);
-      toast.error('Failed to add expense');
+      console.error('Error saving expense:', error);
+      toast.error('Failed to save expense');
     } finally {
       setIsSubmitting(false);
     }
+  };
+
+  const handleEdit = (expense) => {
+    setForm({
+      date: expense.date,
+      type: expense.type,
+      amount: expense.amount,
+      notes: expense.notes || ''
+    });
+    setEditingId(expense.id);
+    setShowModal(true);
   };
 
   const handleDelete = async (id) => {
@@ -123,7 +150,7 @@ export default function Expenses() {
     let dataMap = {};
 
     if (timeframe === 'daily') {
-      startDate.setDate(now.getDate() - 14); // Last 14 days
+      startDate.setDate(now.getDate() - 14);
       for (let i = 0; i < 15; i++) {
         const d = new Date(startDate);
         d.setDate(startDate.getDate() + i);
@@ -132,18 +159,16 @@ export default function Expenses() {
         dataMap[key] = 0;
       }
     } else if (timeframe === 'weekly') {
-      startDate.setDate(now.getDate() - 56); // Last 8 weeks
+      startDate.setDate(now.getDate() - 56);
       for (let i = 0; i < 9; i++) {
         const d = new Date(startDate);
         d.setDate(startDate.getDate() + (i * 7));
         const key = `W${i+1}`;
         labels.push(d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }));
-        // For simplicity, we'll map dates to the nearest week start
         dataMap[d.toISOString().split('T')[0]] = 0;
       }
     } else {
-      // Monthly
-      startDate = new Date(now.getFullYear(), 0, 1); // Current year
+      startDate = new Date(now.getFullYear(), 0, 1);
       for (let i = 0; i < 12; i++) {
         const d = new Date(startDate.getFullYear(), i, 1);
         const key = d.toLocaleDateString('en-IN', { month: 'short' });
@@ -159,7 +184,6 @@ export default function Expenses() {
         if (timeframe === 'daily') {
           key = exp.date;
         } else if (timeframe === 'weekly') {
-          // Find the latest week start that is <= expDate
           const weekStarts = Object.keys(dataMap).sort();
           key = weekStarts.find((ws, idx) => {
              const nextWs = weekStarts[idx+1];
@@ -247,15 +271,72 @@ export default function Expenses() {
     };
   }, [expenses, theme]);
 
-  const filteredExpenses = expenses.filter(exp =>
-    exp.notes?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    exp.type?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredExpenses = useMemo(() => {
+    const query = searchTerm.toLowerCase();
+    return expenses.filter(exp =>
+      exp.notes?.toLowerCase().includes(query) ||
+      exp.type?.toLowerCase().includes(query) ||
+      exp.date?.includes(query)
+    );
+  }, [expenses, searchTerm]);
+
+  const todaysExpenses = useMemo(() => {
+    const today = new Date().toISOString().split('T')[0];
+    return expenses.filter(exp => exp.date === today);
+  }, [expenses]);
+
+  const todaysTotal = useMemo(() => 
+    todaysExpenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0), [todaysExpenses]);
+
+  const handleDownloadPDF = async () => {
+    setIsExporting(true);
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Expense Audit Report', 14, 22);
+      
+      doc.setFontSize(10);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 28);
+      
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, 35, pageWidth - 28, 20, 'F');
+      doc.setFontSize(11);
+      doc.setTextColor(71, 85, 105);
+      doc.text(`Total Lifetime Expenses: INR ${totalExpenses.toLocaleString()}`, 20, 48);
+
+      const tableData = filteredExpenses.map(e => [
+        e.date,
+        e.type,
+        e.notes || '-',
+        `INR ${Number(e.amount).toLocaleString()}`
+      ]);
+
+      autoTable(doc, {
+        startY: 60,
+        head: [['Date', 'Category', 'Notes', 'Amount']],
+        body: tableData,
+        theme: 'striped',
+        headStyles: { fillColor: [249, 115, 22] },
+        styles: { fontSize: 9 }
+      });
+
+      doc.save('WinExpress_Expenses_History.pdf');
+      toast.success('PDF Downloaded');
+    } catch (err) {
+      console.error('PDF generation failed:', err);
+      toast.error('Failed to generate PDF');
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
 
-      {/* ─── Header ─── */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div>
           <h2 className="text-3xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -284,7 +365,7 @@ export default function Expenses() {
           </div>
 
           <button
-            onClick={() => setShowModal(true)}
+            onClick={() => { setEditingId(null); setShowModal(true); }}
             className="flex items-center gap-2 bg-gradient-to-br from-primary to-primary-hover text-white px-5 py-2.5 rounded-xl font-black text-sm shadow-lg shadow-primary/25 active:scale-95 transition-all outline-none"
           >
             <Plus size={16} strokeWidth={3} />
@@ -293,10 +374,8 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* ─── Dashboard Section ─── */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-12 gap-6 items-stretch">
         
-        {/* Column 1: Summary Cards */}
         <div className="lg:col-span-3 flex flex-col gap-4">
           <SummaryCard
             icon={<TrendingDown size={20} />}
@@ -314,7 +393,6 @@ export default function Expenses() {
           />
         </div>
 
-        {/* Column 2: Wave Trend Chart */}
         <div className="md:col-span-2 lg:col-span-6 bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none p-6 relative overflow-hidden">
           <div className="flex justify-between items-center mb-6">
             <div>
@@ -332,7 +410,6 @@ export default function Expenses() {
           </div>
         </div>
 
-        {/* Column 3: Breakdown Chart */}
         <div className="md:col-span-1 lg:col-span-3 bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none p-6">
           <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider mb-6">
             Breakdown
@@ -364,127 +441,157 @@ export default function Expenses() {
         </div>
       </div>
 
-      {/* ─── Main Grid ─── */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '20px' }}>
 
-        {/* Expense Table */}
-        <div style={{
-          background: theme === 'dark' ? '#1f2937' : '#fff',
-          borderRadius: '16px', border: `1px solid ${theme === 'dark' ? '#374151' : '#f0f0f0'}`,
-          boxShadow: theme === 'dark' ? '0 4px 24px rgba(0,0,0,0.3)' : '0 4px 24px rgba(0,0,0,0.06)',
-          overflow: 'hidden',
-        }}>
-          {/* Table Header */}
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '20px 24px', borderBottom: `1px solid ${theme === 'dark' ? '#374151' : '#f3f4f6'}`,
-            gap: '12px', flexWrap: 'wrap',
-          }}>
-            <h3 style={{ margin: 0, fontSize: '16px', fontWeight: 600, color: theme === 'dark' ? '#f9fafb' : '#111827' }}>
-              Recent Expenses
-            </h3>
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '8px',
-              background: theme === 'dark' ? '#374151' : '#f9fafb',
-              borderRadius: '10px', padding: '8px 14px', border: `1px solid ${theme === 'dark' ? '#4b5563' : '#e5e7eb'}`,
-              flex: '0 0 auto', minWidth: '220px',
-            }}>
-              <Search size={14} color={theme === 'dark' ? '#9ca3af' : '#6b7280'} />
-              <input
-                placeholder="Search expenses…"
-                value={searchTerm}
-                onChange={e => setSearchTerm(e.target.value)}
-                style={{
-                  border: 'none', background: 'transparent', outline: 'none',
-                  fontSize: '13px', color: theme === 'dark' ? '#f9fafb' : '#111827',
-                  width: '100%',
-                }}
-              />
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between p-6 border-b border-slate-50 dark:border-slate-700/50 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary">
+              <LayoutDashboard size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-800 dark:text-white">Today's Expenses</h3>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
             </div>
           </div>
-
-          {/* Table */}
-          <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead>
-                <tr style={{ background: theme === 'dark' ? '#111827' : '#fafafa' }}>
-                  {['Date', 'Category', 'Notes', 'Amount'].map((h, i) => (
-                    <th key={h} style={{
-                      padding: '11px 20px', textAlign: i === 3 ? 'right' : 'left',
-                      fontSize: '11px', fontWeight: 600, letterSpacing: '0.08em',
-                      color: theme === 'dark' ? '#6b7280' : '#9ca3af', textTransform: 'uppercase',
-                    }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filteredExpenses.map((expense, idx) => {
-                  const cfg = TYPE_CONFIG[expense.type] || TYPE_CONFIG.Misc;
-                  return (
-                    <tr
-                      key={expense.id}
-                      style={{
-                        borderTop: `1px solid ${theme === 'dark' ? '#374151' : '#f3f4f6'}`,
-                        transition: 'background 0.15s',
-                      }}
-                      onMouseEnter={e => e.currentTarget.style.background = theme === 'dark' ? '#374151' : '#fafafa'}
-                      onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                    >
-                      <td style={{ padding: '14px 20px', fontSize: '13px', color: theme === 'dark' ? '#d1d5db' : '#374151', whiteSpace: 'nowrap' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                          <Calendar size={12} color={theme === 'dark' ? '#6b7280' : '#9ca3af'} />
-                          {expense.date}
-                        </div>
-                      </td>
-                      <td style={{ padding: '14px 20px' }}>
-                        <span style={{
-                          display: 'inline-block', padding: '3px 10px', borderRadius: '20px',
-                          fontSize: '12px', fontWeight: 600,
-                          background: cfg.bg, color: cfg.text,
-                        }}>
-                          {expense.type}
-                        </span>
-                      </td>
-                      <td style={{ padding: '14px 20px', fontSize: '13px', color: theme === 'dark' ? '#9ca3af' : '#6b7280', maxWidth: '240px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {expense.notes || <span style={{ opacity: 0.4 }}>—</span>}
-                      </td>
-                      <td style={{ padding: '14px 20px', textAlign: 'right' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-                          <span style={{ fontWeight: 700, fontSize: '14px', color: '#f43f5e' }}>
-                            ₹{Number(expense.amount).toLocaleString()}
-                          </span>
-                          <button 
-                            onClick={() => handleDelete(expense.id)}
-                            style={{ 
-                              padding: '6px', borderRadius: '8px', border: 'none', background: 'transparent',
-                              cursor: 'pointer', color: theme === 'dark' ? '#6b7280' : '#9ca3af',
-                              transition: 'color 0.15s, background 0.15s'
-                            }}
-                            onMouseEnter={e => { e.currentTarget.style.color = '#f43f5e'; e.currentTarget.style.background = 'rgba(244,63,94,0.1)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.color = theme === 'dark' ? '#6b7280' : '#9ca3af'; e.currentTarget.style.background = 'transparent'; }}
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {filteredExpenses.length === 0 && (
-                  <tr>
-                    <td colSpan="4" style={{ padding: '48px 20px', textAlign: 'center', color: theme === 'dark' ? '#4b5563' : '#d1d5db', fontSize: '14px' }}>
-                      No expenses found
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
+          <div className="bg-rose-50 dark:bg-rose-500/10 px-6 py-3 rounded-2xl border border-rose-100 dark:border-rose-500/20 text-center sm:text-right">
+             <p className="text-[10px] font-black text-rose-400 dark:text-rose-400 uppercase tracking-widest mb-0.5">Today's Total</p>
+             <p className="text-2xl font-black text-rose-600 dark:text-rose-500 tracking-tight">₹{todaysTotal.toLocaleString()}</p>
           </div>
         </div>
 
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 dark:bg-slate-900/30">
+                {['Category', 'Notes', 'Amount', 'Actions'].map((h, i) => (
+                  <th key={h} className={`px-6 py-4 text-left text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.15em] ${i === 2 || i === 3 ? 'text-right' : ''}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {todaysExpenses.map((expense) => {
+                const cfg = TYPE_CONFIG[expense.type] || TYPE_CONFIG.Misc;
+                return (
+                  <tr key={expense.id} className="border-t border-slate-50 dark:border-slate-800/50 hover:bg-slate-50/30 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-wider`} style={{ background: cfg.bg, color: cfg.text }}>
+                        {expense.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-600 dark:text-slate-300">
+                      {expense.notes || <span className="text-slate-300 dark:text-slate-700">No notes recorded</span>}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-base font-black text-rose-600 dark:text-rose-500 tracking-tight">₹{Number(expense.amount).toLocaleString()}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => handleEdit(expense)} className="p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-500/10 text-slate-400 hover:text-blue-500 transition-all">
+                          <Edit2 size={16} />
+                        </button>
+                        <button onClick={() => handleDelete(expense.id)} className="p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-500/10 text-slate-400 hover:text-rose-500 transition-all">
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {todaysExpenses.length === 0 && (
+                <tr>
+                  <td colSpan="4" className="px-6 py-12 text-center">
+                    <div className="flex flex-col items-center justify-center opacity-40">
+                      <TrendingDown size={32} className="mb-2" />
+                      <p className="text-sm font-bold uppercase tracking-widest">No expenses recorded today</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
-      {/* ─── Add Expense Modal ─── */}
+      <div className="bg-white dark:bg-slate-800 rounded-[2rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none overflow-hidden mt-8">
+        <div className="flex flex-col md:flex-row md:items-center justify-between p-6 border-b border-slate-50 dark:border-slate-700/50 gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-xl bg-slate-100 dark:bg-slate-700 flex items-center justify-center text-slate-500 dark:text-slate-300">
+              <History size={20} />
+            </div>
+            <div>
+              <h3 className="text-lg font-black text-slate-800 dark:text-white">Expense History</h3>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Full audit log of all entries</p>
+            </div>
+          </div>
+          
+          <div className="flex items-center gap-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 h-4 w-4" />
+              <input 
+                placeholder="Search history..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="pl-10 pr-4 py-2 text-sm font-bold bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-700 rounded-xl focus:ring-2 focus:ring-primary/20 outline-none w-full sm:w-64 transition-all"
+              />
+            </div>
+            <button 
+              onClick={handleDownloadPDF} 
+              disabled={isExporting}
+              className="p-2.5 bg-slate-100 dark:bg-slate-700 hover:bg-primary hover:text-white text-slate-500 dark:text-slate-300 rounded-xl transition-all shadow-sm active:scale-95 disabled:opacity-50"
+            >
+              <Download size={18} />
+            </button>
+          </div>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 dark:bg-slate-900/30">
+                {['Date', 'Category', 'Notes', 'Amount', 'Actions'].map((h, i) => (
+                  <th key={h} className={`px-6 py-4 text-left text-[11px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-[0.15em] ${i === 3 || i === 4 ? 'text-right' : ''}`}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filteredExpenses.map((expense) => {
+                const cfg = TYPE_CONFIG[expense.type] || TYPE_CONFIG.Misc;
+                return (
+                  <tr key={expense.id} className="border-t border-slate-50 dark:border-slate-800/50 hover:bg-slate-50/30 dark:hover:bg-slate-800/30 transition-colors">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="flex items-center gap-2 text-sm font-black text-slate-900 dark:text-white">
+                        <Calendar size={14} className="text-slate-400" />
+                        {new Date(expense.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider`} style={{ background: cfg.bg, color: cfg.text }}>
+                        {expense.type}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-sm font-medium text-slate-500 dark:text-slate-400 max-w-[200px] truncate">
+                      {expense.notes || '-'}
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-sm font-black text-slate-900 dark:text-white">₹{Number(expense.amount).toLocaleString()}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex items-center justify-end gap-2 text-slate-400">
+                        <button onClick={() => handleEdit(expense)} className="hover:text-blue-500 transition-colors"><Edit2 size={14} /></button>
+                        <button onClick={() => handleDelete(expense.id)} className="hover:text-rose-500 transition-colors"><Trash2 size={14} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      </div>
+
       {showModal && (
         <div
           onClick={() => setShowModal(false)}
@@ -507,7 +614,6 @@ export default function Expenses() {
               overflow: 'hidden',
             }}
           >
-            {/* Modal Top Bar */}
             <div style={{
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
               padding: '20px 24px',
@@ -516,10 +622,10 @@ export default function Expenses() {
             }}>
               <div>
                 <h3 style={{ margin: 0, fontSize: '18px', fontWeight: 700, color: theme === 'dark' ? '#f9fafb' : '#111827' }}>
-                  New Expense
+                  {editingId ? 'Edit Expense' : 'New Expense'}
                 </h3>
                 <p style={{ margin: '2px 0 0', fontSize: '13px', color: theme === 'dark' ? '#6b7280' : '#9ca3af' }}>
-                  Fill in the details below
+                  {editingId ? 'Modify currently selected record' : 'Fill in the details below'}
                 </p>
               </div>
               <button
@@ -538,10 +644,8 @@ export default function Expenses() {
               </button>
             </div>
 
-            {/* Modal Body */}
             <form onSubmit={handleSubmit} style={{ padding: '24px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
 
-              {/* Date & Category row */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
                 <ModalField label="Date" icon={<Calendar size={14} />} theme={theme}>
                   <input
@@ -564,7 +668,6 @@ export default function Expenses() {
                 </ModalField>
               </div>
 
-              {/* Amount */}
               <ModalField label="Amount (₹)" icon={<DollarSign size={14} />} theme={theme}>
                 <input
                   type="number"
@@ -578,7 +681,6 @@ export default function Expenses() {
                 />
               </ModalField>
 
-              {/* Notes */}
               <ModalField label="Notes" icon={<FileText size={14} />} theme={theme}>
                 <input
                   type="text"
@@ -589,7 +691,6 @@ export default function Expenses() {
                 />
               </ModalField>
 
-              {/* Actions */}
               <div style={{ display: 'flex', gap: '10px', marginTop: '4px' }}>
                 <button
                   type="button"
@@ -616,7 +717,7 @@ export default function Expenses() {
                     transition: 'opacity 0.15s',
                   }}
                 >
-                  {isSubmitting ? 'Saving…' : 'Save Expense'}
+                  {isSubmitting ? 'Saving...' : (editingId ? 'Update Expense' : 'Save Expense')}
                 </button>
               </div>
             </form>

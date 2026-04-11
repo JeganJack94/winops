@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { checklistService } from '../services/checklistService';
@@ -13,9 +13,18 @@ import {
   CheckCircle2, 
   Circle,
   Truck,
-  Share2
+  Share2,
+  Camera,
+  Download,
+  QrCode,
+  LayoutGrid,
+  Maximize
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Barcode from 'react-barcode';
+import QRCode from 'react-qr-code';
+import QRCodeLib from 'qrcode';
+import JsBarcode from 'jsbarcode';
 
 const SOD_TASKS = [
   { id: 'sod_1', title: 'Verify Assigned Count', subtitle: 'Check total assigned shipments & note it' },
@@ -145,6 +154,9 @@ export default function Checklist() {
            </div>
         </div>
       </div>
+      
+      {/* 🚀 Barcode & QR Generator Section (Moved to Top) */}
+      <CodeGenerator />
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Left Column: Checklist */}
@@ -254,12 +266,12 @@ export default function Checklist() {
                   <span className="text-4xl font-black">{outboundTotal}</span>
                 </div>
 
-                <Button 
+                <button 
                   onClick={shareOutbound}
-                  className="w-full bg-white text-indigo-600 hover:bg-indigo-50 py-6 rounded-3xl font-black text-lg shadow-xl shadow-black/20 flex items-center justify-center gap-3 transition-all active:scale-95"
+                  className="w-full bg-white text-indigo-600 hover:bg-slate-50 py-4 rounded-3xl font-black text-lg shadow-xl shadow-black/10 flex items-center justify-center gap-3 transition-all active:scale-95 border-0"
                 >
                   <Share2 size={24}/> Share Details
-                </Button>
+                </button>
               </div>
 
               <p className="text-[11px] text-indigo-100 text-center font-medium italic opacity-60">
@@ -270,6 +282,284 @@ export default function Checklist() {
         </div>
       </div>
     </div>
+  );
+}
+
+function CodeGenerator() {
+  const toast = useToast();
+  const [codeValue, setCodeValue] = useState('');
+  const [showResults, setShowResults] = useState(false);
+  const [codeType, setCodeType] = useState('both'); // qr, barcode, both
+  const codeRef = useRef(null);
+
+  const buildAndShareCanvas = async (mode) => {
+    // mode: 'share' | 'download'
+    if (!codeValue) return;
+
+    const PAD   = 40;  // padding around the codes
+    const GAP   = 32;  // gap between QR and Barcode when showing both
+    const QR_SIZE = 260;
+    const BAR_W  = 380;
+    const BAR_H  = 120;
+    const LABEL_H = 28;
+    const FONT   = '13px Arial';
+    const showQR  = codeType === 'qr'  || codeType === 'both';
+    const showBar = codeType === 'barcode' || codeType === 'both';
+
+    try {
+      // --- 1. Generate QR image (returns a data-URL PNG) ---
+      let qrImg = null;
+      if (showQR) {
+        const qrDataUrl = await QRCodeLib.toDataURL(codeValue, {
+          width: QR_SIZE,
+          margin: 1,
+          color: { dark: '#000000', light: '#FFFFFF' },
+        });
+        qrImg = await new Promise((res) => {
+          const img = new Image();
+          img.onload = () => res(img);
+          img.src = qrDataUrl;
+        });
+      }
+
+      // --- 2. Generate Barcode on an off-screen SVG → PNG ---
+      let barImg = null;
+      if (showBar) {
+        const svgEl = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        JsBarcode(svgEl, codeValue, {
+          format: 'CODE128',
+          width: 2,
+          height: BAR_H,
+          fontSize: 18,
+          background: '#FFFFFF',
+          lineColor: '#000000',
+          margin: 10,
+          displayValue: true,
+        });
+        const svgData = new XMLSerializer().serializeToString(svgEl);
+        const blob = new Blob([svgData], { type: 'image/svg+xml;charset=utf-8' });
+        const url  = URL.createObjectURL(blob);
+        barImg = await new Promise((res, rej) => {
+          const img = new Image();
+          img.onload = () => { URL.revokeObjectURL(url); res(img); };
+          img.onerror = rej;
+          img.src = url;
+        });
+      }
+
+      // --- 3. Compute canvas dimensions ---
+      let canvasW = PAD * 2;
+      let canvasH = PAD * 2;
+
+      if (codeType === 'qr') {
+        canvasW += QR_SIZE;
+        canvasH += QR_SIZE + LABEL_H;
+      } else if (codeType === 'barcode') {
+        canvasW += BAR_W;
+        canvasH += barImg.naturalHeight + LABEL_H;
+      } else { // both – side by side
+        canvasW += QR_SIZE + GAP + BAR_W;
+        canvasH += Math.max(QR_SIZE, barImg.naturalHeight) + LABEL_H;
+      }
+
+      // --- 4. Draw onto canvas ---
+      const canvas = document.createElement('canvas');
+      canvas.width  = canvasW;
+      canvas.height = canvasH;
+      const ctx = canvas.getContext('2d');
+
+      // White background
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, canvasW, canvasH);
+
+      ctx.fillStyle = '#555'
+      ctx.font      = FONT;
+      ctx.textAlign = 'center';
+
+      let xCursor = PAD;
+
+      if (showQR) {
+        ctx.drawImage(qrImg, xCursor, PAD, QR_SIZE, QR_SIZE);
+        ctx.fillText('QR Code', xCursor + QR_SIZE / 2, PAD + QR_SIZE + LABEL_H - 6);
+        xCursor += QR_SIZE + GAP;
+      }
+      if (showBar) {
+        const bh = barImg.naturalHeight;
+        const yOff = showQR ? (QR_SIZE - bh) / 2 : 0; // vertical-center barcode next to QR
+        ctx.drawImage(barImg, xCursor, PAD + yOff, BAR_W, bh);
+        ctx.fillText('Barcode', xCursor + BAR_W / 2, PAD + Math.max(QR_SIZE, bh) + LABEL_H - 6);
+      }
+
+      // --- 5. Share or Download ---
+      canvas.toBlob(async (imgBlob) => {
+        if (!imgBlob) { toast.error('Failed to create image'); return; }
+        const fileName = `Code-${codeValue}-${codeType}.png`;
+        const file = new File([imgBlob], fileName, { type: 'image/png' });
+
+        if (mode === 'share' && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `Shipment Code: ${codeValue}`,
+              text: `${codeType.toUpperCase()} code for ${codeValue}`,
+            });
+          } catch (err) {
+            if (err.name !== 'AbortError') downloadFile(imgBlob);
+          }
+        } else {
+          downloadFile(imgBlob);
+        }
+      }, 'image/png');
+    } catch (err) {
+      console.error('Code generation failed:', err);
+      toast.error('Failed to generate image');
+    }
+  };
+
+  const handleShareImage = () => buildAndShareCanvas('share');
+  const handleDownload   = () => buildAndShareCanvas('download');
+
+  const downloadFile = (blob) => {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Code-${codeValue}-${codeType}.png`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    toast.success('Image saved successfully');
+  };
+
+  return (
+    <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 rounded-[2.5rem] overflow-hidden">
+      <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b-0 pb-2">
+        <div className="flex items-center gap-3">
+          <div className="p-2 bg-indigo-50 dark:bg-indigo-500/10 rounded-xl text-indigo-600">
+            <Truck size={20} />
+          </div>
+          <div>
+            <CardTitle className="text-lg font-black uppercase tracking-tight">Code Generator</CardTitle>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Shipment / Order ID Tool</p>
+          </div>
+        </div>
+
+        {/* Type Selection Tabs */}
+        <div className="flex bg-slate-100 dark:bg-slate-900/50 p-1 rounded-xl">
+          <TypeTab 
+            active={codeType === 'qr'} 
+            onClick={() => setCodeType('qr')} 
+            icon={<QrCode size={14}/>} 
+            label="QR" 
+          />
+          <TypeTab 
+            active={codeType === 'barcode'} 
+            onClick={() => setCodeType('barcode')} 
+            icon={<Maximize size={14}/>} 
+            label="Bar" 
+          />
+          <TypeTab 
+            active={codeType === 'both'} 
+            onClick={() => setCodeType('both')} 
+            icon={<LayoutGrid size={14}/>} 
+            label="Both" 
+          />
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <div className="flex flex-col lg:flex-row gap-6">
+          <div className="flex-1 space-y-4">
+            <div className="relative">
+              <input 
+                type="text"
+                value={codeValue}
+                onChange={(e) => {
+                  setCodeValue(e.target.value.toUpperCase());
+                  setShowResults(e.target.value.length > 0);
+                }}
+                placeholder="Enter ID (e.g. WEXP1234567)"
+                className="w-full bg-slate-50/50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-800 rounded-2xl px-5 py-4 outline-none focus:ring-2 focus:ring-primary/20 transition-all text-slate-800 dark:text-slate-200 font-bold"
+              />
+            </div>
+            
+            {showResults && (
+              <div className="grid grid-cols-2 gap-3">
+                <button 
+                  onClick={handleShareImage}
+                  className="col-span-2 bg-[#25D366] hover:bg-[#1ebd5a] text-white py-4 rounded-2xl font-black shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all active:scale-95"
+                >
+                  <Camera size={20} /> Share via WhatsApp
+                </button>
+                <button 
+                  onClick={handleDownload}
+                  className="col-span-2 bg-slate-800 hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 text-white py-3.5 rounded-2xl font-black shadow-lg shadow-black/20 flex items-center justify-center gap-2 transition-all active:scale-95 text-sm"
+                >
+                  <Download size={18} /> Save PNG
+                </button>
+              </div>
+            )}
+          </div>
+
+          {showResults ? (
+            <div className="flex-none flex items-center justify-center p-6 bg-slate-50 dark:bg-slate-900/40 rounded-3xl border border-slate-100 dark:border-slate-800 min-h-[180px]">
+              <div 
+                id="capture-area"
+                ref={codeRef}
+                className={`flex flex-col sm:flex-row items-center gap-8 p-6 bg-white rounded-2xl ${codeType === 'both' ? 'min-w-[400px]' : 'min-w-[200px]'} justify-center`}
+              >
+                {(codeType === 'qr' || codeType === 'both') && (
+                  <div className="flex flex-col items-center gap-2">
+                    <QRCode 
+                      value={codeValue} 
+                      size={140} 
+                      style={{ height: "auto", maxWidth: "100%", width: "100%" }}
+                      viewBox={`0 0 256 256`}
+                    />
+                    <span className="text-[10px] font-black text-slate-400 uppercase">QR Code</span>
+                  </div>
+                )}
+                {(codeType === 'barcode' || codeType === 'both') && (
+                  <div className="flex flex-col items-center gap-4">
+                    <div className="transform scale-90 origin-center px-4">
+                      <Barcode 
+                        value={codeValue} 
+                        height={70} 
+                        width={1.8} 
+                        fontSize={14}
+                        background="transparent"
+                      />
+                    </div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase">Barcode</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="flex-1 flex flex-col items-center justify-center py-10 text-slate-300 dark:text-slate-700 border-2 border-dashed border-slate-100 dark:border-slate-800 rounded-3xl">
+              <CheckCircle2 size={40} className="mb-2 opacity-20"/>
+              <p className="text-xs font-black uppercase tracking-widest text-center">Select type & enter ID</p>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TypeTab({ active, onClick, icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      className={`flex items-center gap-2 px-4 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all ${
+        active 
+          ? 'bg-white dark:bg-slate-800 text-indigo-600 shadow-sm' 
+          : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'
+      }`}
+    >
+      {icon}
+      {label}
+    </button>
   );
 }
 
