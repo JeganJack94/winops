@@ -6,21 +6,26 @@ import OpenAI from 'openai';
 // Initialize Firebase Admin securely using environment variables
 const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
 let serviceAccount = null;
+let db = null;
+
 try {
   if (serviceAccountRaw) {
     serviceAccount = JSON.parse(serviceAccountRaw);
   }
 } catch (e) {
-  console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string in webhook.", e.message);
+  console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string.", e.message);
 }
 
-if (!getApps().length && serviceAccount) {
-  initializeApp({
-    credential: cert(serviceAccount)
-  });
+try {
+  if (!getApps().length && serviceAccount && serviceAccount.private_key) {
+    initializeApp({
+      credential: cert(serviceAccount)
+    });
+    db = getFirestore();
+  }
+} catch (e) {
+  console.error("Failed to initialize Firebase app.", e.message);
 }
-
-const db = serviceAccount ? getFirestore() : null;
 
 // Initialize OpenAI using environment variables
 const openaiApiKey = process.env.OPENAI_API_KEY;

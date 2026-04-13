@@ -4,6 +4,8 @@ import twilio from 'twilio';
 
 const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
 let serviceAccount = null;
+let db = null;
+
 try {
   if (serviceAccountRaw) {
     serviceAccount = JSON.parse(serviceAccountRaw);
@@ -12,12 +14,16 @@ try {
   console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string in daily report.", e.message);
 }
 
-if (!getApps().length && serviceAccount) {
-  initializeApp({
-    credential: cert(serviceAccount)
-  });
+try {
+  if (!getApps().length && serviceAccount && serviceAccount.private_key) {
+    initializeApp({
+      credential: cert(serviceAccount)
+    });
+    db = getFirestore();
+  }
+} catch (e) {
+  console.error("Failed to initialize Firebase app in daily report.", e.message);
 }
-const db = serviceAccount ? getFirestore() : null;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST' && req.method !== 'GET') {
