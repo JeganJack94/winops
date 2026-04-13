@@ -5,7 +5,14 @@ import OpenAI from 'openai';
 
 // Initialize Firebase Admin securely using environment variables
 const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
-const serviceAccount = serviceAccountRaw ? JSON.parse(serviceAccountRaw) : null;
+let serviceAccount = null;
+try {
+  if (serviceAccountRaw) {
+    serviceAccount = JSON.parse(serviceAccountRaw);
+  }
+} catch (e) {
+  console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string in webhook.", e.message);
+}
 
 if (!getApps().length && serviceAccount) {
   initializeApp({
