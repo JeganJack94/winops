@@ -12,19 +12,22 @@
   "dependencies": {
     "chart.js": "^4.5.1",
     "firebase": "^12.10.0",
+    "firebase-admin": "^13.8.0",
     "framer-motion": "^12.38.0",
     "html2canvas": "^1.4.1",
     "jsbarcode": "^3.12.3",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.577.0",
+    "openai": "^6.34.0",
     "qrcode": "^1.5.4",
     "react": "^19.2.4",
     "react-barcode": "^1.6.1",
     "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.4",
     "react-qr-code": "^2.0.18",
-    "react-router-dom": "^7.13.1"
+    "react-router-dom": "^7.13.1",
+    "twilio": "^5.13.1"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

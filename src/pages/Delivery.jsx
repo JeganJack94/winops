@@ -34,6 +34,7 @@ export default function Delivery() {
   const [riderForm, setRiderForm] = useState({
     riderId: '',
     riderName: '',
+    zone: '',
     assignedDelivery: 0,
     assignedPickup: 0,
     completedDelivery: 0,
@@ -284,6 +285,7 @@ export default function Delivery() {
     setRiderForm({
       riderId: '',
       riderName: '',
+      zone: '',
       assignedDelivery: 0,
       assignedPickup: 0,
       completedDelivery: 0,
@@ -430,6 +432,7 @@ export default function Delivery() {
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-[11px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500">
                       <th className="px-5 py-4">Rider</th>
+                      <th className="px-5 py-4">Zone</th>
                       <th className="px-5 py-4 text-center">Assigned (D/P)</th>
                       <th className="px-5 py-4 text-center">Completed (D/P)</th>
                       <th className="px-5 py-4 text-center">Failed</th>
@@ -461,6 +464,9 @@ export default function Delivery() {
                                 </span>
                               )}
                             </div>
+                          </td>
+                          <td className="px-5 py-4 font-bold text-slate-500 dark:text-slate-400 text-xs">
+                            <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">{r.zone || 'None'}</span>
                           </td>
                           <td className="px-5 py-4 text-center font-mono font-medium">
                             {r.assignedDelivery} <span className="text-gray-300 dark:text-gray-600">/</span> {r.assignedPickup}
@@ -573,20 +579,37 @@ export default function Delivery() {
                 <button onClick={closeRiderModal} className="p-2 bg-gray-200 dark:bg-gray-700 rounded-full hover:bg-rose-100 hover:text-rose-600 transition-colors"><X size={16}/></button>
               </div>
               <form onSubmit={handleRiderSubmit} className="p-6 space-y-4">
-                <div className="space-y-1.5">
-                  <label className="text-xs font-bold uppercase text-gray-500">ID / Assigned Rider</label>
-                  <select 
-                     className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
-                     required
-                     value={riderForm.riderId}
-                     onChange={(e) => {
-                       const sel = riders.find(r => r.id === e.target.value);
-                       setRiderForm({...riderForm, riderId: e.target.value, riderName: sel?.name || '', actualRiderId: '', actualRiderName: ''});
-                     }}
-                  >
-                    <option value="">-- Choose Rider --</option>
-                    {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                  </select>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-gray-500">ID / Assigned Rider</label>
+                    <select 
+                       className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
+                       required
+                       value={riderForm.riderId}
+                       onChange={(e) => {
+                         const sel = riders.find(r => r.id === e.target.value);
+                         setRiderForm({...riderForm, riderId: e.target.value, riderName: sel?.name || '', actualRiderId: '', actualRiderName: ''});
+                       }}
+                    >
+                      <option value="">-- Choose Rider --</option>
+                      {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-gray-500">Zone</label>
+                    <select 
+                       className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
+                       required
+                       value={riderForm.zone}
+                       onChange={(e) => setRiderForm({...riderForm, zone: e.target.value})}
+                    >
+                      <option value="">-- Select Zone --</option>
+                      <option value="South">South</option>
+                      <option value="East">East</option>
+                      <option value="West">West</option>
+                      <option value="North">North</option>
+                    </select>
+                  </div>
                 </div>
 
                 {riderForm.riderId && (

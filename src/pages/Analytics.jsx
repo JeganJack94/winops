@@ -7,7 +7,7 @@ import { useTheme } from '../context/ThemeContext';
 import { 
   Users, User as UserIcon, Calendar, TrendingUp, 
   CheckCircle2, AlertCircle, Share2, Download, 
-  IndianRupee, Package, ArrowUpRight, ArrowDownRight
+  IndianRupee, Package, ArrowUpRight, ArrowDownRight, MapPin
 } from 'lucide-react';
 import {
   Chart as ChartJS,
@@ -82,6 +82,7 @@ export default function Analytics() {
 
     // Map for Individual Performance
     const riderStats = {};
+    const zoneStats = {};
 
     filteredRecords.forEach(record => {
       trendLabels.push(new Date(record.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }));
@@ -92,6 +93,7 @@ export default function Analytics() {
       const recordRiders = record.riders || [];
       recordRiders.forEach(r => {
         const name = r.riderName;
+        const zone = r.zone || 'Unassigned';
         const assigned = (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
         const completed = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
         const collected = Number(r.amountCollected) || 0;
@@ -100,10 +102,18 @@ export default function Analytics() {
           riderStats[name] = { totalAssigned: 0, totalCompleted: 0, totalCollected: 0, daily: {} };
         }
 
+        if (!zoneStats[zone]) {
+          zoneStats[zone] = { totalAssigned: 0, totalCompleted: 0, totalCollected: 0 };
+        }
+
         riderStats[name].totalAssigned += assigned;
         riderStats[name].totalCompleted += completed;
         riderStats[name].totalCollected += collected;
         riderStats[name].daily[record.date] = { assigned, completed, collected };
+
+        zoneStats[zone].totalAssigned += assigned;
+        zoneStats[zone].totalCompleted += completed;
+        zoneStats[zone].totalCollected += collected;
 
         if (viewMode === 'team' || (viewMode === 'rider' && name === selectedRider)) {
           dayAssigned += assigned;
@@ -140,7 +150,8 @@ export default function Analytics() {
         volume: trendVolumeData
       },
       riderList,
-      riderStats
+      riderStats,
+      zoneStats
     };
   }, [allRecords, timeframe, viewMode, selectedRider, settings]);
 
@@ -422,6 +433,43 @@ export default function Analytics() {
                 <PerformanceRow icon={Package} label="Avg Deliveries" value={(analyticsData.kpis.totalCompleted / (timeframe === 'week' ? 7 : 30)).toFixed(1)} />
                 <PerformanceRow icon={IndianRupee} label="Avg Collection" value={`₹${(analyticsData.kpis.totalCollected / (timeframe === 'week' ? 7 : 30)).toLocaleString()}`} />
                 <PerformanceRow icon={CheckCircle2} label="Consistency" value="Very High" />
+              </div>
+            </Card>
+          )}
+
+          {/* Area/Zone Breakdown */}
+          {viewMode === 'team' && (
+            <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 p-6 rounded-[2.5rem]">
+              <h4 className="font-black text-slate-900 dark:text-white mb-4 flex items-center gap-2">
+                <MapPin size={18} className="text-primary"/> Zone Performance
+              </h4>
+              <div className="space-y-4">
+                {Object.entries(analyticsData.zoneStats)
+                  .sort((a, b) => b[1].totalCompleted - a[1].totalCompleted)
+                  .map(([zone, stats]) => (
+                    <div key={zone} className="flex flex-col gap-2 p-3 rounded-2xl bg-slate-50 dark:bg-slate-900/50 border border-slate-100 dark:border-slate-800">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-bold text-slate-700 dark:text-slate-300">{zone}</span>
+                        <div className="text-xs font-black text-emerald-600">
+                          {stats.totalCompleted} <span className="text-slate-400 font-medium">/ {stats.totalAssigned}</span>
+                        </div>
+                      </div>
+                      <div className="h-1.5 w-full bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div 
+                          className={`h-full ${(() => {
+                            const rate = stats.totalAssigned > 0 ? (stats.totalCompleted / stats.totalAssigned) * 100 : 0;
+                            if (rate >= 90) return 'bg-emerald-500';
+                            if (rate >= 80) return 'bg-orange-500';
+                            return 'bg-rose-500';
+                          })()}`}
+                          style={{ width: `${stats.totalAssigned > 0 ? (stats.totalCompleted / stats.totalAssigned) * 100 : 0}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                  {Object.keys(analyticsData.zoneStats).length === 0 && (
+                    <p className="text-xs text-slate-400 font-bold text-center py-2">No zone data available for this period.</p>
+                  )}
               </div>
             </Card>
           )}
