@@ -4,16 +4,23 @@ import twilio from 'twilio';
 import OpenAI from 'openai';
 
 // Initialize Firebase Admin securely using environment variables
-const serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
+let serviceAccountRaw = process.env.FIREBASE_SERVICE_ACCOUNT;
 let serviceAccount = null;
 let db = null;
 
 try {
   if (serviceAccountRaw) {
+    // Trim accidental surrounding quotes from .env parsing
+    if (serviceAccountRaw.startsWith("'") && serviceAccountRaw.endsWith("'")) {
+      serviceAccountRaw = serviceAccountRaw.slice(1, -1);
+    } else if (serviceAccountRaw.startsWith('"') && serviceAccountRaw.endsWith('"')) {
+      serviceAccountRaw = serviceAccountRaw.slice(1, -1);
+    }
     serviceAccount = JSON.parse(serviceAccountRaw);
   }
 } catch (e) {
   console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string.", e.message);
+  console.error("Raw string received:", serviceAccountRaw.substring(0, 50) + "...");
 }
 
 try {

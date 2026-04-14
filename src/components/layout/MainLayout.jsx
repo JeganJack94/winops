@@ -4,6 +4,8 @@ import Sidebar from './Sidebar';
 import { useTheme } from '../../context/ThemeContext';
 import { Sun, Moon, Truck, Menu } from 'lucide-react';
 import { auth } from '../../services/firebase';
+import SmartNotifications from './SmartNotifications';
+import BotFAB from '../ui/BotFAB';
 import { onAuthStateChanged } from 'firebase/auth';
 
 export default function MainLayout() {
@@ -64,6 +66,8 @@ export default function MainLayout() {
              </div>
           </div>
           <div className="flex items-center gap-3">
+             <SmartNotifications />
+             
              <button 
                onClick={toggleTheme}
                className="p-2 rounded-lg bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 transition-colors"
@@ -105,6 +109,8 @@ export default function MainLayout() {
               </div>
             )}
             
+            <SmartNotifications />
+            
             <button 
               onClick={toggleTheme}
               className="p-2.5 rounded-xl bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-700 transition-all border border-gray-200 dark:border-gray-700 shadow-sm active:scale-95"
@@ -120,6 +126,8 @@ export default function MainLayout() {
             <Outlet />
           </div>
         </main>
+
+        <BotFAB />
       </div>
     </div>
   );
