@@ -8,7 +8,20 @@ let db = null;
 
 try {
   if (serviceAccountRaw) {
-    serviceAccount = JSON.parse(serviceAccountRaw);
+    let raw = serviceAccountRaw;
+    // Trim accidental surrounding quotes from .env parsing
+    if (raw.startsWith("'") && raw.endsWith("'")) {
+      raw = raw.slice(1, -1);
+    } else if (raw.startsWith('"') && raw.endsWith('"')) {
+      raw = raw.slice(1, -1);
+    }
+
+    serviceAccount = JSON.parse(raw);
+    
+    // Fix literal newline characters in private_key if they exist
+    if (serviceAccount.private_key && typeof serviceAccount.private_key === 'string') {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
   }
 } catch (e) {
   console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string in daily report.", e.message);
@@ -19,6 +32,8 @@ try {
     initializeApp({
       credential: cert(serviceAccount)
     });
+    db = getFirestore();
+  } else if (getApps().length) {
     db = getFirestore();
   }
 } catch (e) {

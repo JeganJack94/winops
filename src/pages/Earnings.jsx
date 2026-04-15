@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { IndianRupee, Lock, Calendar, Edit2, Share2, Users, FileText, CheckCircle2, TrendingUp, User } from 'lucide-react';
+import { IndianRupee, Lock, Calendar, Edit2, Share2, Users, FileText, CheckCircle2, TrendingUp, User, Plus, Trash2, History, CreditCard } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { riderService } from '../services/riderService';
 import { earningsService } from '../services/earningsService';
@@ -46,6 +46,7 @@ export default function Earnings() {
   const [riders, setRiders] = useState([]);
   const [dailyRecords, setDailyRecords] = useState([]);
   const [overrides, setOverrides] = useState([]);
+  const [payouts, setPayouts] = useState([]);
   const [globalSettings, setGlobalSettings] = useState({ ratePerParcel: 12 });
 
   // Subscriptions
@@ -54,8 +55,9 @@ export default function Earnings() {
     const unsub1 = riderService.subscribeToRiders(setRiders);
     const unsub2 = deliveryService.subscribeToDailyRecords(setDailyRecords);
     const unsub3 = earningsService.subscribeToOverrides(setOverrides);
-    const unsub4 = settingsService.subscribeToSettings(setGlobalSettings);
-    return () => { unsub1(); unsub2(); unsub3(); unsub4(); };
+    const unsub4 = earningsService.subscribeToPayouts(setPayouts);
+    const unsub5 = settingsService.subscribeToSettings(setGlobalSettings);
+    return () => { unsub1(); unsub2(); unsub3(); unsub4(); unsub5(); };
   }, [isAuthenticated]);
 
   const handleLogin = (e) => {
@@ -174,16 +176,20 @@ export default function Earnings() {
 
     const summary = {};
     riders.forEach(r => summary[r.id] = {
+      riderId: r.id,
       riderName: r.name,
       totalDays: 0,
       totalDeliveries: 0,
       totalSalary: 0,
+      totalPaid: 0,
+      balanceDue: 0,
       riderRate: r.ratePerParcel !== undefined ? Number(r.ratePerParcel) : globalRate
     });
 
     const [year, month] = activeMonth.split('-');
     const daysInMonth = new Date(year, month, 0).getDate();
 
+    // Calculate Target Salary based on performance
     for (let day = 1; day <= daysInMonth; day++) {
       const dateStr = `${year}-${month}-${String(day).padStart(2, '0')}`;
       const dailyRecord = dailyRecords.find(dr => dr.date === dateStr);
@@ -191,21 +197,10 @@ export default function Earnings() {
 
       riders.forEach(r => {
         const riderRate = r.ratePerParcel !== undefined ? Number(r.ratePerParcel) : globalRate;
-
-        // Own entry: riderId matches AND no substitute OR substitute is self
-        const ownEntry = allRiderEntries.find(dr =>
-          dr.riderId === r.id && (!dr.actualRiderId || dr.actualRiderId === r.id)
-        );
-        // Substitute entries: this rider actually delivered under someone else's ID
-        const subEntries = allRiderEntries.filter(dr =>
-          dr.actualRiderId === r.id && dr.riderId !== r.id
-        );
-
-        const ownDels = ownEntry
-          ? (Number(ownEntry.completedDelivery) || 0) + (Number(ownEntry.completedPickup) || 0)
-          : 0;
-        const subDels = subEntries.reduce((sum, dr) =>
-          sum + (Number(dr.completedDelivery) || 0) + (Number(dr.completedPickup) || 0), 0);
+        const ownEntry = allRiderEntries.find(dr => dr.riderId === r.id && (!dr.actualRiderId || dr.actualRiderId === r.id));
+        const subEntries = allRiderEntries.filter(dr => dr.actualRiderId === r.id && dr.riderId !== r.id);
+        const ownDels = ownEntry ? (Number(ownEntry.completedDelivery) || 0) + (Number(ownEntry.completedPickup) || 0) : 0;
+        const subDels = subEntries.reduce((sum, dr) => sum + (Number(dr.completedDelivery) || 0) + (Number(dr.completedPickup) || 0), 0);
         const tDels = ownDels + subDels;
 
         let p = tDels > 0;
@@ -225,10 +220,24 @@ export default function Earnings() {
       });
     }
 
+    // Accumulate Payouts for the month
+    payouts.forEach(p => {
+      if (p.date.startsWith(activeMonth) && summary[p.riderId]) {
+        summary[p.riderId].totalPaid += Number(p.amount) || 0;
+      }
+    });
+
+    // Calculate Final Balance
+    Object.values(summary).forEach(r => {
+      r.balanceDue = r.totalSalary - r.totalPaid;
+    });
+
     return Object.values(summary).sort((a, b) => b.totalSalary - a.totalSalary);
-  }, [activeMonth, dailyRecords, riders, overrides, activeTab, globalSettings]);
+  }, [activeMonth, dailyRecords, riders, overrides, activeTab, globalSettings, payouts]);
 
   const monthlyTotalPayout = monthlyEarnings.reduce((s, r) => s + r.totalSalary, 0);
+  const monthlyTotalPaid = monthlyEarnings.reduce((s, r) => s + r.totalPaid, 0);
+  const monthlyTotalBalance = monthlyEarnings.reduce((s, r) => s + r.balanceDue, 0);
 
   // ─── INDIVIDUAL RIDER DATA ───
   const individualData = useMemo(() => {
@@ -287,6 +296,10 @@ export default function Earnings() {
 
     const avgSR = successCount > 0 ? Math.round(totalSuccess / successCount) : 0;
 
+    // Individual Payouts for this rider in this month
+    const riderMonthPayouts = payouts.filter(p => p.riderId === selectedRiderId && p.date.startsWith(indivMonth));
+    const totalPaid = riderMonthPayouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
     return {
       rider,
       riderRate,
@@ -296,9 +309,57 @@ export default function Earnings() {
       totalAssigned,
       totalDelivered,
       totalSalary,
-      avgSR
+      avgSR,
+      payouts: riderMonthPayouts,
+      totalPaid,
+      balanceDue: totalSalary - totalPaid
     };
-  }, [selectedRiderId, indivMonth, dailyRecords, overrides, riders, globalSettings]);
+  }, [selectedRiderId, indivMonth, dailyRecords, overrides, riders, globalSettings, payouts]);
+
+  // ─── PAYOUT MODAL logic ───
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const [payoutForm, setPayoutForm] = useState({
+    riderId: '',
+    amount: '',
+    date: new Date().toISOString().split('T')[0],
+    type: 'Advance',
+    notes: ''
+  });
+
+  const openPayoutModal = (rId = '') => {
+    setPayoutForm({
+      ...payoutForm,
+      riderId: rId || selectedRiderId,
+      date: new Date().toISOString().split('T')[0]
+    });
+    setShowPayoutModal(true);
+  };
+
+  const handleSavePayout = async (e) => {
+    e.preventDefault();
+    try {
+      if (!payoutForm.riderId) return toast.error("Select a rider");
+      await earningsService.addPayout({
+        ...payoutForm,
+        amount: Number(payoutForm.amount)
+      });
+      toast.success("Payout recorded successfully");
+      setShowPayoutModal(false);
+      setPayoutForm({ ...payoutForm, amount: '', notes: '' });
+    } catch {
+      toast.error("Failed to save payout");
+    }
+  };
+
+  const deletePayout = async (id) => {
+    if (!window.confirm("Delete this payout record?")) return;
+    try {
+      await earningsService.deletePayout(id);
+      toast.success("Payout deleted");
+    } catch {
+      toast.error("Failed to delete payout");
+    }
+  };
 
   // ─── SHARE WHATSAPP ───
   const shareDailyWhatsApp = () => {
@@ -464,15 +525,21 @@ export default function Earnings() {
               <label className="text-sm font-bold text-gray-400 uppercase">Select Month</label>
               <input type="month" value={activeMonth} onChange={(e) => setActiveMonth(e.target.value)} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-1.5 font-bold text-primary outline-none" />
             </div>
-            <button onClick={shareMonthlyWhatsApp} className="flex gap-2 items-center bg-[#25D366] text-white px-4 py-2 font-bold rounded-xl shadow-lg shadow-[#25D366]/20 transition-transform active:scale-95">
-              <Share2 size={16}/> Share Month Report
-            </button>
+            <div className="flex gap-2">
+              <button onClick={() => openPayoutModal()} className="flex gap-2 items-center bg-indigo-600 text-white px-4 py-2 font-bold rounded-xl shadow-lg shadow-indigo-600/20 transition-transform active:scale-95">
+                <CreditCard size={16}/> Record Payout
+              </button>
+              <button onClick={shareMonthlyWhatsApp} className="flex gap-2 items-center bg-[#25D366] text-white px-4 py-2 font-bold rounded-xl shadow-lg shadow-[#25D366]/20 transition-transform active:scale-95">
+                <Share2 size={16}/> Share Report
+              </button>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard title="Total Month Payout" value={`₹${monthlyTotalPayout.toLocaleString()}`} icon={IndianRupee} color="from-emerald-50 to-white dark:from-emerald-900/30" textColor="text-emerald-600" />
-            <KPICard title="Total Rider Days" value={monthlyEarnings.reduce((s,r) => s + r.totalDays, 0)} icon={Calendar} color="from-blue-50 to-white dark:from-blue-900/30" textColor="text-blue-600" />
-            <KPICard title="Month Deliveries" value={monthlyEarnings.reduce((s,r) => s + r.totalDeliveries, 0)} icon={CheckCircle2} color="from-indigo-50 to-white dark:from-indigo-900/30" textColor="text-indigo-600" />
+            <KPICard title="Advances Paid"      value={`₹${monthlyTotalPaid.toLocaleString()}`}   icon={CreditCard} color="from-blue-50 to-white dark:from-blue-900/30" textColor="text-blue-600" />
+            <KPICard title="Net Balance Due"    value={`₹${monthlyTotalBalance.toLocaleString()}`} icon={TrendingUp} color="from-amber-50 to-white dark:from-amber-900/30" textColor="text-amber-600" />
+            <KPICard title="Total Rider Days"   value={monthlyEarnings.reduce((s,r) => s + r.totalDays, 0)} icon={Calendar} color="from-indigo-50 to-white dark:from-indigo-900/30" textColor="text-indigo-600" />
           </div>
 
           <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
@@ -480,22 +547,32 @@ export default function Earnings() {
                <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500 font-bold uppercase tracking-wider text-[11px]">
                  <tr>
                    <th className="px-6 py-4">Rider</th>
-                   <th className="px-6 py-4 text-center">Days Present</th>
-                   <th className="px-6 py-4 text-center">Month Deliveries</th>
-                   <th className="px-6 py-4 text-center">Total Salary</th>
+                   <th className="px-6 py-4 text-center">Days</th>
+                   <th className="px-6 py-4 text-center">Deliveries</th>
+                   <th className="px-6 py-4 text-center">Earnings</th>
+                   <th className="px-6 py-4 text-center">Advances</th>
+                   <th className="px-6 py-4 text-center">Balance</th>
+                   <th className="px-6 py-4"></th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                  {monthlyEarnings.map(r => (
-                   <tr key={r.riderId} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30">
+                   <tr key={r.riderId} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                      <td className="px-6 py-4 font-bold dark:text-white">{r.riderName}</td>
-                     <td className="px-6 py-4 text-center font-bold text-gray-700 dark:text-gray-300">{r.totalDays} Days</td>
-                     <td className="px-6 py-4 text-center font-mono font-bold text-gray-700 dark:text-gray-300">{r.totalDeliveries}</td>
-                     <td className="px-6 py-4 text-center font-mono font-black text-emerald-600 dark:text-emerald-500">₹{r.totalSalary.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-center font-bold text-gray-700 dark:text-gray-300">{r.totalDays}d</td>
+                     <td className="px-6 py-4 text-center font-mono font-bold text-gray-600 dark:text-gray-400">{r.totalDeliveries}</td>
+                     <td className="px-6 py-4 text-center font-mono font-black text-gray-700 dark:text-gray-200">₹{r.totalSalary.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-center font-mono font-black text-rose-500 dark:text-rose-400">₹{r.totalPaid.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-center font-mono font-black text-emerald-600 dark:text-emerald-500">₹{r.balanceDue.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-right">
+                       <button onClick={() => openPayoutModal(r.riderId)} className="p-2 bg-gray-50 dark:bg-gray-800 hover:text-primary rounded-lg transition-colors text-gray-400">
+                         <Plus size={16}/>
+                       </button>
+                     </td>
                    </tr>
                  ))}
                  {monthlyEarnings.length === 0 && (
-                   <tr><td colSpan="4" className="p-8 text-center text-gray-500">No earnings data for this month.</td></tr>
+                   <tr><td colSpan="7" className="p-8 text-center text-gray-500">No earnings data for this month.</td></tr>
                  )}
                </tbody>
              </table>
@@ -547,73 +624,114 @@ export default function Earnings() {
                     <p className="text-indigo-200 text-xs uppercase font-bold">Days</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-black">{individualData.avgSR}%</p>
-                    <p className="text-indigo-200 text-xs uppercase font-bold">Avg SR</p>
+                    <p className="text-3xl font-black">₹{individualData.totalSalary.toLocaleString()}</p>
+                    <p className="text-indigo-200 text-xs uppercase font-bold">Target</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-black">₹{(individualData.totalSalary/1000).toFixed(1)}k</p>
-                    <p className="text-indigo-200 text-xs uppercase font-bold">Earnings</p>
+                    <p className="text-3xl font-black text-amber-300">₹{individualData.totalPaid.toLocaleString()}</p>
+                    <p className="text-indigo-200 text-xs uppercase font-bold">Paid</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-3xl font-black text-emerald-300">₹{individualData.balanceDue.toLocaleString()}</p>
+                    <p className="text-indigo-200 text-xs uppercase font-bold">Due</p>
                   </div>
                 </div>
               </div>
 
               {/* KPI Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <KPICard title="Days Present"    value={individualData.totalDays}                               icon={Calendar}     color="from-blue-50 to-white dark:from-blue-900/30"    textColor="text-blue-600" />
-                <KPICard title="Total Assigned"  value={individualData.totalAssigned}                           icon={FileText}     color="from-slate-50 to-white dark:from-slate-900/30"  textColor="text-slate-600" />
+                <KPICard title="Days Present"    value={`${individualData.totalDays}d`}                            icon={Calendar}     color="from-blue-50 to-white dark:from-blue-900/30"    textColor="text-blue-600" />
                 <KPICard title="Total Delivered" value={individualData.totalDelivered}                          icon={CheckCircle2} color="from-emerald-50 to-white dark:from-emerald-900/30" textColor="text-emerald-600" />
-                <KPICard title="Total Earnings"  value={`₹${individualData.totalSalary.toLocaleString()}`}     icon={IndianRupee}  color="from-amber-50 to-white dark:from-amber-900/30"   textColor="text-amber-600" />
+                <KPICard title="Advances Paid"  value={`₹${individualData.totalPaid.toLocaleString()}`}        icon={CreditCard}   color="from-rose-50 to-white dark:from-rose-900/30"    textColor="text-rose-600" />
+                <KPICard title="Net Payable"    value={`₹${individualData.balanceDue.toLocaleString()}`}      icon={IndianRupee}  color="from-amber-50 to-white dark:from-amber-900/30"   textColor="text-amber-600" />
               </div>
 
-              {/* Performance Chart */}
-              <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl p-6">
-                <div className="flex items-center gap-2 mb-4">
-                  <TrendingUp size={18} className="text-primary" />
-                  <h3 className="font-black text-gray-800 dark:text-white">Daily Performance</h3>
-                  <span className="ml-auto text-[10px] font-bold text-gray-400 uppercase">Assigned vs Delivered</span>
-                </div>
-                <Bar
-                  data={{
-                    labels: individualData.days.map(d => d.label),
-                    datasets: [
-                      {
-                        label: 'Assigned',
-                        data: individualData.days.map(d => d.assigned),
-                        backgroundColor: 'rgba(99,102,241,0.2)',
-                        borderColor: 'rgba(99,102,241,0.8)',
-                        borderWidth: 1.5,
-                        borderRadius: 4,
-                      },
-                      {
-                        label: 'Delivered',
-                        data: individualData.days.map(d => d.delivered),
-                        backgroundColor: 'rgba(16,185,129,0.7)',
-                        borderColor: 'rgba(16,185,129,1)',
-                        borderWidth: 1.5,
-                        borderRadius: 4,
-                      }
-                    ]
-                  }}
-                  options={{
-                    responsive: true,
-                    plugins: {
-                      legend: { position: 'top', labels: { font: { weight: 'bold' }, padding: 16 } },
-                      tooltip: {
-                        callbacks: {
-                          afterBody: (items) => {
-                            const idx = items[0]?.dataIndex;
-                            const d = individualData.days[idx];
-                            return d ? [`Success Rate: ${d.sr}%`, `Salary: ₹${d.salary}`] : [];
-                          }
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* Performance Chart */}
+                <div className="lg:col-span-2 bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl p-6">
+                  <div className="flex items-center gap-2 mb-4">
+                    <TrendingUp size={18} className="text-primary" />
+                    <h3 className="font-black text-gray-800 dark:text-white">Daily Performance</h3>
+                    <span className="ml-auto text-[10px] font-bold text-gray-400 uppercase">Assigned vs Delivered</span>
+                  </div>
+                  <Bar
+                    data={{
+                      labels: individualData.days.filter(d => d.present || d.assigned > 0).map(d => d.label),
+                      datasets: [
+                        {
+                          label: 'Assigned',
+                          data: individualData.days.filter(d => d.present || d.assigned > 0).map(d => d.assigned),
+                          backgroundColor: 'rgba(99,102,241,0.2)',
+                          borderColor: 'rgba(99,102,241,0.8)',
+                          borderWidth: 1.5,
+                          borderRadius: 4,
+                        },
+                        {
+                          label: 'Delivered',
+                          data: individualData.days.filter(d => d.present || d.assigned > 0).map(d => d.delivered),
+                          backgroundColor: 'rgba(16,185,129,0.7)',
+                          borderColor: 'rgba(16,185,129,1)',
+                          borderWidth: 1.5,
+                          borderRadius: 4,
                         }
+                      ]
+                    }}
+                    options={{
+                      responsive: true,
+                      plugins: {
+                        legend: { position: 'top', labels: { font: { weight: 'bold' }, padding: 16 } },
+                      },
+                      scales: {
+                        x: { grid: { display: false }, ticks: { font: { size: 10 } } },
+                        y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } } }
                       }
-                    },
-                    scales: {
-                      x: { grid: { display: false }, ticks: { font: { size: 10 } } },
-                      y: { beginAtZero: true, grid: { color: 'rgba(0,0,0,0.05)' }, ticks: { font: { size: 10 } } }
-                    }
-                  }}
-                />
+                    }}
+                  />
+                </div>
+
+                {/* Payout History Section */}
+                <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl flex flex-col">
+                  <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+                    <div>
+                      <h3 className="font-black text-gray-800 dark:text-white flex items-center gap-2">
+                        <History size={18} className="text-amber-500" /> Payout History
+                      </h3>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{indivMonth}</p>
+                    </div>
+                    <button onClick={() => openPayoutModal()} className="p-2 bg-primary/10 text-primary rounded-xl hover:bg-primary/20 transition-all">
+                      <Plus size={18} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto max-h-[300px] p-4 space-y-3">
+                    {individualData.payouts.map(p => (
+                      <div key={p.id} className="group p-3 bg-gray-50 dark:bg-gray-800/50 rounded-2xl flex items-center justify-between hover:ring-2 hover:ring-primary/20 transition-all">
+                        <div>
+                          <p className="text-xs font-black text-gray-700 dark:text-gray-200">{p.type}</p>
+                          <p className="text-[10px] text-gray-400 font-bold">{p.date}</p>
+                          {p.notes && <p className="text-[10px] text-indigo-500 font-medium italic mt-0.5">"{p.notes}"</p>}
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <p className="font-mono font-black text-rose-500">₹{p.amount.toLocaleString()}</p>
+                          <button onClick={() => deletePayout(p.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-rose-500 transition-all">
+                            <Trash2 size={12} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {individualData.payouts.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-12 text-gray-300">
+                        <CreditCard size={32} className="opacity-20 mb-2" />
+                        <p className="text-[10px] font-black uppercase tracking-widest">No payouts recorded</p>
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 rounded-b-[2rem]">
+                    <div className="flex justify-between items-center text-xs font-black uppercase text-gray-500">
+                      <span>Total Paid</span>
+                      <span className="text-rose-500">₹{individualData.totalPaid.toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Daily Breakdown Table */}
@@ -678,6 +796,89 @@ export default function Earnings() {
             </>
           ) : null}
         </>
+      )}
+
+      {/* PAYOUT MODAL */}
+      {showPayoutModal && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setShowPayoutModal(false)}/>
+          <div className="relative w-full max-w-sm bg-white dark:bg-gray-900 rounded-[28px] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800">
+            <div className="p-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
+              <h3 className="text-xl font-black flex items-center gap-2 italic">
+                <CreditCard className="text-primary" size={20} /> Record Payout
+              </h3>
+              <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mt-1">Salary & Advances</p>
+            </div>
+            <form onSubmit={handleSavePayout} className="p-6 space-y-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Select Rider</label>
+                <select 
+                  value={payoutForm.riderId} 
+                  onChange={e => setPayoutForm({...payoutForm, riderId: e.target.value})}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-primary/20 rounded-xl px-4 py-3 outline-none font-bold transition-all"
+                  required
+                >
+                  <option value="">-- Choose Rider --</option>
+                  {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Date</label>
+                  <input 
+                    type="date" 
+                    value={payoutForm.date} 
+                    onChange={e => setPayoutForm({...payoutForm, date: e.target.value})}
+                    className="w-full bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-primary/20 rounded-xl px-4 py-3 outline-none font-bold transition-all text-xs"
+                    required 
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Type</label>
+                  <select 
+                    value={payoutForm.type} 
+                    onChange={e => setPayoutForm({...payoutForm, type: e.target.value})}
+                    className="w-full bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-primary/20 rounded-xl px-4 py-3 outline-none font-bold transition-all text-xs"
+                  >
+                    <option value="Advance">Advance</option>
+                    <option value="Weekly">Weekly</option>
+                    <option value="Final">Final</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider text-primary">Amount (₹)</label>
+                <input 
+                  type="number" 
+                  value={payoutForm.amount} 
+                  onChange={e => setPayoutForm({...payoutForm, amount: e.target.value})}
+                  placeholder="0.00"
+                  className="w-full bg-indigo-50/50 dark:bg-primary/5 border-2 border-primary/20 focus:border-primary rounded-xl px-4 py-3 outline-none font-mono font-black text-xl text-primary"
+                  required 
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-black uppercase text-gray-500 tracking-wider">Notes</label>
+                <input 
+                  type="text" 
+                  value={payoutForm.notes} 
+                  onChange={e => setPayoutForm({...payoutForm, notes: e.target.value})}
+                  placeholder="Payment reference..."
+                  className="w-full bg-gray-50 dark:bg-gray-800 border-2 border-transparent focus:border-primary/20 rounded-xl px-4 py-3 outline-none font-medium transition-all text-sm"
+                />
+              </div>
+              
+              <div className="pt-4">
+                <button type="submit" className="w-full bg-primary hover:bg-primary-hover text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                  <CreditCard size={18} /> Confirm Payment
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
       {/* OVERRIDE MODAL */}

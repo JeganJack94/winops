@@ -6,10 +6,13 @@ import {
   updateDoc,
   doc,
   setDoc,
-  deleteDoc
+  deleteDoc,
+  addDoc,
+  orderBy
 } from 'firebase/firestore';
 
 const EARNINGS_OVERRIDES_COLLECTION = 'earnings_overrides';
+const PAYOUTS_COLLECTION = 'payout_records';
 
 export const earningsService = {
   subscribeToOverrides: (callback) => {
@@ -34,5 +37,28 @@ export const earningsService = {
 
   deleteOverride: async (id) => {
     await deleteDoc(doc(db, EARNINGS_OVERRIDES_COLLECTION, id));
+  },
+
+  // Payouts & Advances
+  subscribeToPayouts: (callback) => {
+    const q = query(collection(db, PAYOUTS_COLLECTION), orderBy('date', 'desc'));
+    return onSnapshot(q, (snapshot) => {
+      const payouts = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      callback(payouts);
+    });
+  },
+
+  addPayout: async (data) => {
+    return await addDoc(collection(db, PAYOUTS_COLLECTION), {
+      ...data,
+      timestamp: new Date().toISOString()
+    });
+  },
+
+  deletePayout: async (id) => {
+    await deleteDoc(doc(db, PAYOUTS_COLLECTION, id));
   }
 };

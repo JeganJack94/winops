@@ -16,11 +16,16 @@ try {
     } else if (serviceAccountRaw.startsWith('"') && serviceAccountRaw.endsWith('"')) {
       serviceAccountRaw = serviceAccountRaw.slice(1, -1);
     }
+    
     serviceAccount = JSON.parse(serviceAccountRaw);
+
+    // Fix literal newline characters in private_key if they exist
+    if (serviceAccount.private_key && typeof serviceAccount.private_key === 'string') {
+      serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
+    }
   }
 } catch (e) {
   console.error("Failed to parse FIREBASE_SERVICE_ACCOUNT json string.", e.message);
-  console.error("Raw string received:", serviceAccountRaw.substring(0, 50) + "...");
 }
 
 try {
@@ -28,6 +33,8 @@ try {
     initializeApp({
       credential: cert(serviceAccount)
     });
+    db = getFirestore();
+  } else if (getApps().length) {
     db = getFirestore();
   }
 } catch (e) {

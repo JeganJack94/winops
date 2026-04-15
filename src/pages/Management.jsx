@@ -9,6 +9,7 @@ import { useToast } from '../hooks/useToast';
 import { useTheme } from '../context/ThemeContext';
 import { managementService } from '../services/managementService';
 import { expenseService } from '../services/expenseService';
+import { riderService } from '../services/riderService';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Tooltip, Legend } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 
@@ -16,8 +17,6 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
 
 const TABS = [
   { id: 'investments', name: 'Investments', icon: Landmark },
-  { id: 'salaries', name: 'Salaries', icon: Users },
-  { id: 'settlements', name: 'Settlements', icon: Receipt },
   { id: 'expenses', name: 'Expenses Settle', icon: Clock }
 ];
 
@@ -30,9 +29,8 @@ export default function Management() {
   const [activeTab, setActiveTab] = useState('investments');
   
   const [investments, setInvestments] = useState([]);
-  const [salaries, setSalaries] = useState([]);
-  const [settlements, setSettlements] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [riders, setRiders] = useState([]);
   
   const [showModal, setShowModal] = useState(false);
   const [modalType, setModalType] = useState(''); // 'investment', 'salary', 'settlement'
@@ -44,15 +42,13 @@ export default function Management() {
   useEffect(() => {
     if (isAuthenticated) {
       const unsubInv = managementService.subscribeToInvestments(setInvestments);
-      const unsubSal = managementService.subscribeToSalaries(setSalaries);
-      const unsubSet = managementService.subscribeToSettlements(setSettlements);
       const unsubExp = expenseService.subscribeToExpenses(setExpenses);
+      const unsubRid = riderService.subscribeToRiders(setRiders);
       
       return () => {
         unsubInv();
-        unsubSal();
-        unsubSet();
         unsubExp();
+        unsubRid();
       };
     }
   }, [isAuthenticated]);
@@ -76,12 +72,6 @@ export default function Management() {
       if (modalType === 'investment') {
         if (isUpdate) await managementService.updateInvestment(form.id, data);
         else await managementService.addInvestment(data);
-      } else if (modalType === 'salary') {
-        if (isUpdate) await managementService.updateSalary(form.id, data);
-        else await managementService.addSalary(data);
-      } else if (modalType === 'settlement') {
-        if (isUpdate) await managementService.updateSettlement(form.id, data);
-        else await managementService.addSettlement(data);
       } else if (modalType === 'expense') {
         if (isUpdate) await expenseService.updateExpense(form.id, data);
         else await expenseService.addExpense(data);
@@ -100,8 +90,6 @@ export default function Management() {
     
     try {
       if (type === 'investment') await managementService.deleteInvestment(id);
-      else if (type === 'salary') await managementService.deleteSalary(id);
-      else if (type === 'settlement') await managementService.deleteSettlement(id);
       else if (type === 'expense') await expenseService.deleteExpense(id);
       
       toast.success('Entry deleted');
@@ -197,7 +185,7 @@ export default function Management() {
             <ShieldCheck className="text-primary" size={32} />
             Management
           </h2>
-          <p className="text-gray-500 dark:text-gray-400">Track investments, settlements, and staff salaries.</p>
+          <p className="text-gray-500 dark:text-gray-400">Track business investments and settle pending operational expenses.</p>
         </div>
         
         <div className="flex p-1.5 bg-gray-100 dark:bg-gray-800 rounded-2xl border border-gray-200 dark:border-gray-700 overflow-x-auto no-scrollbar">
@@ -238,22 +226,7 @@ export default function Management() {
             onDelete={(id) => handleDelete('investment', id)}
           />
         )}
-        {activeTab === 'salaries' && (
-          <SalariesView 
-            items={salaries} 
-            onAdd={() => { setModalType('salary'); setForm({}); setShowModal(true); }} 
-            onEdit={(item) => handleEdit('salary', item)}
-            onDelete={(id) => handleDelete('salary', id)}
-          />
-        )}
-        {activeTab === 'settlements' && (
-          <SettlementsView 
-            items={settlements} 
-            onAdd={() => { setModalType('settlement'); setForm({}); setShowModal(true); }} 
-            onEdit={(item) => handleEdit('settlement', item)}
-            onDelete={(id) => handleDelete('settlement', id)}
-          />
-        )}
+
         {activeTab === 'expenses' && (
           <ExpensesSettleView 
             items={expenses} 
@@ -279,14 +252,26 @@ export default function Management() {
                       onChange={e => setForm({...form, date: e.target.value})}
                       className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none" 
                     />
-                    <input 
-                      type="text" 
-                      placeholder={modalType === 'salary' ? 'Rider / Staff Name' : modalType === 'expense' ? 'Notes / Description' : 'Description / Source'} 
-                      required
-                      value={modalType === 'expense' ? (form.notes || '') : (form.description || '')}
-                      onChange={e => setForm({...form, [modalType === 'expense' ? 'notes' : 'description']: e.target.value})}
-                      className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none" 
-                    />
+                    {modalType === 'salary' ? (
+                      <select 
+                        required
+                        value={form.description || ''}
+                        onChange={e => setForm({...form, description: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border-2 border-primary/20 rounded-xl px-4 py-3 outline-none font-bold"
+                      >
+                        <option value="" disabled>-- Select Rider / Staff --</option>
+                        {riders.map(r => <option key={r.id} value={r.name}>{r.name}</option>)}
+                      </select>
+                    ) : (
+                      <input 
+                        type="text" 
+                        placeholder={modalType === 'expense' ? 'Notes / Description' : 'Description / Source'} 
+                        required
+                        value={modalType === 'expense' ? (form.notes || '') : (form.description || '')}
+                        onChange={e => setForm({...form, [modalType === 'expense' ? 'notes' : 'description']: e.target.value})}
+                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none" 
+                      />
+                    )}
                     <div className="relative">
                       <span className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 font-bold">₹</span>
                       <input 
@@ -298,16 +283,7 @@ export default function Management() {
                         className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl pl-8 pr-4 py-3 outline-none font-bold" 
                       />
                     </div>
-                    {modalType === 'salary' && (
-                      <input 
-                        type="text" 
-                        placeholder="Month (e.g. April 2026)" 
-                        required
-                        value={form.month || ''}
-                        onChange={e => setForm({...form, month: e.target.value})}
-                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none" 
-                      />
-                    )}
+
                     {modalType === 'investment' && (
                       <select 
                         required
@@ -538,101 +514,7 @@ function InvestmentsView({ items, onAdd, onToggle, onAddRecovery, onEdit, onDele
   );
 }
 
-function SalariesView({ items, onAdd, onEdit, onDelete }) {
-  return (
-    <div className="bg-white dark:bg-gray-800/50 rounded-3xl border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
-      <div className="p-4 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
-        <h3 className="font-bold">Staff Salary Tracking</h3>
-        <button onClick={onAdd} className="bg-primary/10 text-primary p-2 rounded-xl border border-primary/20 hover:bg-primary/20 transition-all"><Plus size={20}/></button>
-      </div>
-      <div className="divide-y divide-gray-50 dark:divide-gray-800">
-        {items.map(item => (
-          <div key={item.id} className="p-4 flex items-center justify-between group">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 rounded-xl flex items-center justify-center">
-                <Users size={20} />
-              </div>
-              <div>
-                <p className="font-bold text-gray-900 dark:text-white capitalize">{item.description}</p>
-                <p className="text-xs text-gray-500 font-medium">{item.month}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="font-black text-gray-900 dark:text-white">₹{item.amount.toLocaleString()}</p>
-                <div className="flex items-center gap-1 justify-end text-[10px] font-black uppercase text-emerald-500">
-                  <CheckCircle2 size={10} /> Paid
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => onEdit(item)} 
-                  className="p-2 border border-blue-100 dark:border-blue-900/30 rounded-lg text-primary hover:bg-primary/5 transition-all shadow-sm"
-                >
-                  <Pencil size={18} />
-                </button>
-                <button 
-                  onClick={() => onDelete(item.id)} 
-                  className="p-2 border border-rose-100 dark:border-rose-900/30 rounded-lg text-rose-500 hover:bg-rose-50 transition-all shadow-sm"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-        {items.length === 0 && <div className="p-12 text-center text-gray-400">No salary records.</div>}
-      </div>
-    </div>
-  );
-}
 
-function SettlementsView({ items, onAdd, onEdit, onDelete }) {
-  return (
-    <div className="bg-white dark:bg-gray-800/50 rounded-3xl border border-gray-100 dark:border-gray-800 overflow-hidden shadow-sm">
-      <div className="p-4 border-b border-gray-50 dark:border-gray-800 flex justify-between items-center bg-gray-50/50 dark:bg-gray-800/50">
-        <h3 className="font-bold">Monthly Hub Settlements</h3>
-        <button onClick={onAdd} className="bg-primary/10 text-primary p-2 rounded-xl border border-primary/20 hover:bg-primary/20 transition-all"><Plus size={20}/></button>
-      </div>
-      <div className="divide-y divide-gray-50 dark:divide-gray-800">
-        {items.map(item => (
-          <div key={item.id} className="p-4 flex items-center justify-between group">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-rose-100 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 rounded-xl flex items-center justify-center">
-                <Landmark size={20} />
-              </div>
-              <div>
-                <p className="font-bold text-gray-900 dark:text-white">{item.description}</p>
-                <p className="text-xs text-gray-500 font-medium">{item.date}</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-right">
-                <p className="font-black text-emerald-600">+₹{item.amount.toLocaleString()}</p>
-                <p className="text-[10px] font-black uppercase text-gray-400">Settled</p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => onEdit(item)} 
-                  className="p-2 border border-blue-100 dark:border-blue-900/30 rounded-lg text-primary hover:bg-primary/5 transition-all shadow-sm"
-                >
-                  <Pencil size={18} />
-                </button>
-                <button 
-                  onClick={() => onDelete(item.id)} 
-                  className="p-2 border border-rose-100 dark:border-rose-900/30 rounded-lg text-rose-500 hover:bg-rose-50 transition-all shadow-sm"
-                >
-                  <Trash2 size={18} />
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-        {items.length === 0 && <div className="p-12 text-center text-gray-400">No settlements recorded.</div>}
-      </div>
-    </div>
-  );
-}
 
 function ExpensesSettleView({ items, onEdit, onDelete }) {
   const [filter, setFilter] = useState('all'); // all, pending, settled

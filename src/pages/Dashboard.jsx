@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
+import { earningsService } from '../services/earningsService';
 import { useTheme } from '../context/ThemeContext';
 import {
   Chart as ChartJS,
@@ -117,15 +118,18 @@ export default function Dashboard() {
   const { theme } = useTheme();
   const [allRecords, setAllRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [payouts, setPayouts] = useState([]);
 
   useEffect(() => {
     // Single subscription to daily_records instead of multiple legacy ones
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords, 100);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
+    const unsubPayouts = earningsService.subscribeToPayouts(setPayouts);
 
     return () => {
       unsubRecords();
       unsubExpenses();
+      unsubPayouts();
     };
   }, []);
 
@@ -160,6 +164,12 @@ export default function Dashboard() {
       .filter(e => e.date && e.date.startsWith(currentMonth))
       .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
 
+    const monthlyPayouts = payouts
+      .filter(p => p.date && p.date.startsWith(currentMonth))
+      .reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+
+    const totalOutflow = monthlyExpenses + monthlyPayouts;
+
     const received = todayRecord ? (Number(todayRecord.receivedDelivery) || 0) + (Number(todayRecord.receivedPickup) || 0) : 0;
     const delivered = todayRecord ? (Number(todayRecord.totalCompleted) || 0) : 0;
     const pending = todayRecord ? (Number(todayRecord.totalPending) || 0) : 0;
@@ -184,8 +194,8 @@ export default function Dashboard() {
         gradient: 'linear-gradient(135deg, #92400e 0%, #f59e0b 100%)',
       },
       {
-        title: 'Monthly Expenses',
-        value: `₹${monthlyExpenses.toLocaleString('en-IN')}`,
+        title: 'Monthly Spending',
+        value: `₹${totalOutflow.toLocaleString('en-IN')}`,
         icon: IndianRupee,
         gradient: 'linear-gradient(135deg, #9f1239 0%, #f43f5e 100%)',
       },

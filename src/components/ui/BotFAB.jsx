@@ -42,6 +42,16 @@ export default function BotFAB() {
         body: JSON.stringify({ query: userMessage.text })
       });
 
+      if (!response.ok) {
+        // Fallback for local dev 404
+        if (response.status === 404 && import.meta.env.DEV) {
+          return handleMockResponse(userMessage.text);
+        }
+        
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.text || `Server error (${response.status})`);
+      }
+
       const data = await response.json();
       
       setMessages(prev => [...prev, {
@@ -50,14 +60,41 @@ export default function BotFAB() {
         text: data.text || "Sorry, I couldn't understand that."
       }]);
     } catch (error) {
+      // Catch network errors too
+      if (import.meta.env.DEV) {
+        return handleMockResponse(userMessage.text);
+      }
+
       setMessages(prev => [...prev, {
         id: Date.now() + 1,
         role: 'bot',
-        text: 'Connection to Monk failed. Please check network.'
+        text: `Error: ${error.message || 'Connection failed'}. Please check if the backend is running.`
       }]);
     } finally {
       setIsTyping(false);
     }
+  };
+
+  const handleMockResponse = (query) => {
+    setTimeout(() => {
+      const lower = query.toLowerCase();
+      let response = "I'm in *Development Mock Mode* since the backend isn't running. In production, I use AI to analyze your real data!";
+      
+      if (lower.includes('hi') || lower.includes('hello')) {
+        response = "Hello! I am Monk (Mock Mode). How can I help you test the UI today?";
+      } else if (lower.includes('status')) {
+        response = "*Mock Status Report*\n\n📦 Assigned: 152\n✅ Completed: 145\n💰 Collection: ₹2,450\n🎯 Success: 95%";
+      } else if (lower.includes('help')) {
+        response = "Try asking for 'status' or just say 'hi'. I can also answer basic queries in this mock mode!";
+      }
+
+      setMessages(prev => [...prev, {
+        id: Date.now() + 1,
+        role: 'bot',
+        text: response
+      }]);
+      setIsTyping(false);
+    }, 800);
   };
 
   const formatText = (text) => {

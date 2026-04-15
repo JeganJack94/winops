@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
-import { Search, Plus, Trash2, X, Calendar, Tag, DollarSign, FileText, TrendingDown, Edit2, Download, History, LayoutDashboard } from 'lucide-react';
+import { Search, Plus, Trash2, X, Calendar, Tag, DollarSign, FileText, TrendingDown, Edit2, Download, History, LayoutDashboard, Users } from 'lucide-react';
 import { useToast } from '../hooks/useToast';
 import { expenseService } from '../services/expenseService';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { Doughnut, Line } from 'react-chartjs-2';
 import { useTheme } from '../context/ThemeContext';
+import { riderService } from '../services/riderService';
 import {
   Chart as ChartJS,
   ArcElement,
@@ -59,6 +60,7 @@ export default function Expenses() {
   const [timeframe, setTimeframe] = useState('weekly'); 
   const [editingId, setEditingId] = useState(null);
   const [isExporting, setIsExporting] = useState(false);
+  const [riders, setRiders] = useState([]);
 
   const [form, setForm] = useState({
     date: new Date().toISOString().split('T')[0],
@@ -68,8 +70,12 @@ export default function Expenses() {
   });
 
   useEffect(() => {
-    const unsub = expenseService.subscribeToExpenses(setExpenses, 1000);
-    return () => unsub();
+    const unsubExp = expenseService.subscribeToExpenses(setExpenses, 1000);
+    const unsubRid = riderService.subscribeToRiders(setRiders);
+    return () => {
+      unsubExp();
+      unsubRid();
+    };
   }, []);
 
   useEffect(() => {
@@ -658,13 +664,29 @@ export default function Expenses() {
                 </ModalField>
 
                 <ModalField label="Category" icon={<Tag size={14} />} theme={theme}>
-                  <select
-                    value={form.type}
-                    onChange={e => setForm({ ...form, type: e.target.value })}
-                    style={inputStyle(theme)}
-                  >
-                    {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                  <div className="flex flex-col gap-3">
+                    <select
+                      value={form.type}
+                      onChange={e => setForm({ ...form, type: e.target.value })}
+                      style={inputStyle(theme)}
+                    >
+                      {EXPENSE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+
+                    {form.type === 'Salary' && (
+                      <div className="flex items-center gap-2 mt-1">
+                        <Users size={14} className="text-gray-400" />
+                        <select
+                          value={form.riderId || ''}
+                          onChange={e => setForm({ ...form, riderId: e.target.value })}
+                          className="flex-1 bg-transparent dark:bg-transparent border-b border-gray-200 dark:border-gray-700 outline-none text-xs font-bold py-1"
+                        >
+                          <option value="">-- Link to Rider (Optional) --</option>
+                          {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                      </div>
+                    )}
+                  </div>
                 </ModalField>
               </div>
 
