@@ -6,6 +6,8 @@ import Delivery from './pages/Delivery';
 import Earnings from './pages/Earnings';
 import Reports from './pages/Reports';
 import Analytics from './pages/Analytics';
+import Customers from './pages/Customers';
+import Maps from './pages/Maps';
 import Checklist from './pages/Checklist';
 import Settings from './pages/Settings';
 import Calculator from './pages/Calculator';
@@ -49,6 +51,8 @@ function AppContent() {
         <Route path="reports" element={<Reports />} />
         <Route path="analytics" element={<Analytics />} />
         <Route path="checklist" element={<Checklist />} />
+        <Route path="customers" element={<Customers />} />
+        <Route path="maps" element={<Maps />} />
         <Route path="calculator" element={<Calculator />} />
         <Route path="settings" element={<Settings />} />
         <Route path="management" element={<Management />} />

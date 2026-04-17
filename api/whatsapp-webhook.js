@@ -68,8 +68,18 @@ export default async function handler(req, res) {
   }
 
   try {
-    if (incomingMsg.startsWith('help')) {
-      twiml.message("👋 *WinOps Assistant Help*\n\nTry sending:\n- *status today*: Get today's total operations stats\n- *status [rider]*: Get stats for a specific rider (e.g. status john)\n- *Or ask any Analytics question!* (e.g. 'How did the South zone do today?' or 'Who delivered the most yesterday?')");
+    if (incomingMsg === 'hi' || incomingMsg.startsWith('help')) {
+      twiml.message(`👋 *வணக்கம்!* (Welcome to WinOps Assistant)
+
+I am your operations AI. I can speak both *English* and *Tamil*.
+
+*Try asking me:*
+- "status today" (Today's performance)
+- "யார் பெஸ்ட் ரைடர்?" (Who is the best rider?)
+- "நேற்று டெலிவரி எப்படி இருந்தது?" (How was delivery yesterday?)
+- "Which zone had the most pending items?"
+
+_How can I help you today?_`);
       
     } else if (incomingMsg === 'status today') {
       const today = new Date().toLocaleDateString('en-CA'); // e.g., YYYY-MM-DD
@@ -127,6 +137,8 @@ export default async function handler(req, res) {
          date: r.date,
          totalAssigned: r.totalAssigned,
          totalCompleted: r.totalCompleted,
+         totalPending: r.totalPending,
+         totalAmount: r.totalAmount,
          successRate: r.successRate,
          riders: (r.riders || []).map(ri => ({
             name: ri.riderName,
@@ -143,12 +155,14 @@ export default async function handler(req, res) {
         messages: [
           {
             role: "system",
-            content: `You are WinOps AI, a helpful operations assistant for a delivery hub tracking system.
+            content: `You are WinOps AI, the expert operations assistant for WinOps delivery hub.
 Your goal is to answer the user's question accurately based STRICTLY on the JSON database context provided.
-Format your responses for a clean WhatsApp reading experience. Use appropriate emojis, short paragraphs, and bullet points. Avoid using complex markdown, stick to Whatsapp compatible text (e.g., *bold*, _italic_, ~strikethrough~).
-If the data is missing or doesn't answer the question, state it clearly. Keep the response concise but informative.
-Do not hallucinate data that is not in the JSON context.
-`
+
+KEY INSTRUCTIONS:
+1. **Language**: Detect the user's language. If they use Tamil, respond in professional and clear Tamil. If they use English, respond in English.
+2. **Platform**: You are on WhatsApp. Use bold (*text*), bullet points, and appropriate emojis. Keep paragraphs short.
+3. **Accuracy**: Do not hallucinate data. If the answer is not in the context, say you don't have enough data.
+4. **Tone**: Be helpful, concise, and insightful.`
           },
           {
             role: "system",

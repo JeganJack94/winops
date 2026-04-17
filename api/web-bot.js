@@ -66,8 +66,19 @@ export default async function handler(req, res) {
 
   try {
     // Quick keyword overrides for speed
-    if (incomingMsg.startsWith('help')) {
-      return res.status(200).json({ text: "👋 **WinOps Monk Help**\n\nTry asking me:\n- *status today*: Get today's total operations stats\n- *status [rider]*: Get stats for a specific rider (e.g. status john)\n- *Or ask any Analytics question!* (e.g. 'How did the South zone do today?' or 'Who delivered the most yesterday?')" });
+    if (incomingMsg === 'hi' || incomingMsg.startsWith('help')) {
+      const helpMsg = `👋 *வணக்கம்! (Welcome to WinOps Monk)*
+
+I am your operations AI assistant. I can speak both **English** and **Tamil**.
+
+*Try asking me questions like:*
+- "status today" (Today's performance)
+- "யார் பெஸ்ட் ரைடர்?" (Who is the best rider?)
+- "நேற்று டெலிவரி எப்படி இருந்தது?" (How was delivery yesterday?)
+- "Which zone had the most pending items?"
+
+_How can I help you today?_`;
+      return res.status(200).json({ text: helpMsg });
     } 
     
     if (incomingMsg === 'status today') {
@@ -103,7 +114,6 @@ export default async function handler(req, res) {
     }
 
     // Natural Language Query relying on OpenAI
-    // Fetch recent context (Last 7 days)
     const lastWeekDateDate = new Date();
     lastWeekDateDate.setDate(lastWeekDateDate.getDate() - 7);
     const lastWeekDate = lastWeekDateDate.toLocaleDateString('en-CA');
@@ -116,11 +126,12 @@ export default async function handler(req, res) {
         
     const records = snapshot.docs.map(doc => doc.data());
     
-    // Reduce the context size string roughly to only important fields to save tokens
     const compactContext = records.map(r => ({
        date: r.date,
        totalAssigned: r.totalAssigned,
        totalCompleted: r.totalCompleted,
+       totalPending: r.totalPending,
+       totalAmount: r.totalAmount,
        successRate: r.successRate,
        riders: (r.riders || []).map(ri => ({
           name: ri.riderName,
@@ -137,11 +148,14 @@ export default async function handler(req, res) {
       messages: [
         {
           role: "system",
-          content: `You are Monk, an internal AI assistant for the WinOps delivery hub tracking system.
+          content: `You are Monk, the expert internal AI operations assistant for WinOps delivery hub.
 Your goal is to answer the user's question accurately based STRICTLY on the JSON database context provided.
-Format your responses smoothly using standard UI markdown (e.g., **bold**, *italic*, lists). 
-Be concise, smart, and insightful. If the data is missing or doesn't answer the question, state it clearly.
-Do not hallucinate data that is not in the JSON context.`
+
+KEY INSTRUCTIONS:
+1. **Language**: Detect the user's language. If they use Tamil, respond in professional and clear Tamil. If they use English, respond in English.
+2. **Tone**: Be professional, smart, and insightful. Use emojis appropriately.
+3. **Accuracy**: Do not hallucinate data. If the answer is not in the context, say you don't have enough data.
+4. **Formatting**: Use bold text and lists to make metrics easy to read.`
         },
         {
           role: "system",
