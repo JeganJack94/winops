@@ -5,6 +5,7 @@ import { Download, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSig
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
 import { settingsService } from '../services/settingsService';
+import { earningsService } from '../services/earningsService';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
@@ -55,6 +56,7 @@ export default function Reports() {
   const [dateRange, setDateRange] = useState('This Week');
   const [allRecords, setAllRecords] = useState([]);
   const [expenses, setExpenses] = useState([]);
+  const [payouts, setPayouts] = useState([]);
   const [settings, setSettings] = useState({ ratePerParcel: 18 });
   const [isExporting, setIsExporting] = useState(false);
   const [trendGranularity, setTrendGranularity] = useState('daily'); // daily, weekly, monthly
@@ -62,10 +64,12 @@ export default function Reports() {
   useEffect(() => {
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
+    const unsubPayouts = earningsService.subscribeToPayouts(setPayouts);
     const unsubSettings = settingsService.subscribeToSettings(setSettings);
     return () => {
       unsubRecords();
       unsubExpenses();
+      unsubPayouts();
       unsubSettings();
     };
   }, []);
@@ -107,16 +111,19 @@ export default function Reports() {
 
     return {
       records: allRecords.filter(recordsFilter),
-      expenses: expenses.filter(recordsFilter)
+      expenses: expenses.filter(recordsFilter),
+      payouts: payouts.filter(recordsFilter)
     };
-  }, [dateRange, allRecords, expenses]);
+  }, [dateRange, allRecords, expenses, payouts]);
 
   const metrics = useMemo(() => {
     const totalReceived = filteredData.records.reduce((acc, curr) => 
       acc + (Number(curr.receivedDelivery) || 0) + (Number(curr.receivedPickup) || 0), 0);
     const totalDelivered = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalCompleted) || 0), 0);
     const totalCollections = filteredData.records.reduce((acc, curr) => acc + (Number(curr.totalAmount) || 0), 0);
-    const totalExp = filteredData.expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    const totalGeneralExp = filteredData.expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    const totalPayouts = filteredData.payouts.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+    const totalExp = totalGeneralExp + totalPayouts;
     
     // Revenue is based on parcels delivered
     const totalRevenue = totalDelivered * (Number(settings.ratePerParcel) || 18);
@@ -198,6 +205,12 @@ export default function Reports() {
       const key = getGroupKey(exp.date);
       if (!aggregated[key]) aggregated[key] = { revenue: 0, expenses: 0 };
       aggregated[key].expenses += (Number(exp.amount) || 0);
+    });
+
+    filteredData.payouts.forEach(p => {
+      const key = getGroupKey(p.date);
+      if (!aggregated[key]) aggregated[key] = { revenue: 0, expenses: 0 };
+      aggregated[key].expenses += (Number(p.amount) || 0);
     });
 
     const labels = Object.keys(aggregated).sort((a, b) => {
@@ -310,6 +323,27 @@ export default function Reports() {
         body: expenseRows,
         theme: 'striped',
         headStyles: { fillColor: [244, 63, 94] },
+        styles: { fontSize: 9 }
+      });
+
+      // Salary Advances Detail Table
+      const payoutY = (doc.lastAutoTable?.finalY || finalY + 20) + 15;
+      doc.setFontSize(14);
+      doc.text('Salary Advances / Payouts', 14, payoutY);
+      
+      const payoutRows = filteredData.payouts.map(p => [
+        p.date,
+        p.riderName || 'N/A',
+        p.type || 'Salary Advance',
+        `₹${(p.amount || 0).toLocaleString()}`
+      ]);
+
+      autoTable(doc, {
+        startY: payoutY + 5,
+        head: [['Date', 'Rider', 'Type', 'Amount']],
+        body: payoutRows,
+        theme: 'striped',
+        headStyles: { fillColor: [14, 165, 233] },
         styles: { fontSize: 9 }
       });
 
