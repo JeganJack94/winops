@@ -6,6 +6,7 @@ import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
 import { settingsService } from '../services/settingsService';
 import { earningsService } from '../services/earningsService';
+import { settlementService } from '../services/settlementService';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
@@ -58,19 +59,23 @@ export default function Reports() {
   const [expenses, setExpenses] = useState([]);
   const [payouts, setPayouts] = useState([]);
   const [settings, setSettings] = useState({ ratePerParcel: 18 });
+  const [settlements, setSettlements] = useState({});
   const [isExporting, setIsExporting] = useState(false);
   const [trendGranularity, setTrendGranularity] = useState('daily'); // daily, weekly, monthly
+  const [activeTab, setActiveTab] = useState('analytics'); // analytics, settlements
 
   useEffect(() => {
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
     const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
     const unsubPayouts = earningsService.subscribeToPayouts(setPayouts);
     const unsubSettings = settingsService.subscribeToSettings(setSettings);
+    const unsubSettlements = settlementService.subscribeToSettlements(setSettlements);
     return () => {
       unsubRecords();
       unsubExpenses();
       unsubPayouts();
       unsubSettings();
+      unsubSettlements();
     };
   }, []);
 
@@ -245,6 +250,48 @@ export default function Reports() {
     };
   }, [filteredData, settings, trendGranularity]);
 
+  const settlementList = useMemo(() => {
+    const rate = Number(settings.ratePerParcel) || 18;
+    const groups = {};
+
+    allRecords.forEach(record => {
+      const date = new Date(record.date);
+      const year = date.getFullYear();
+      const month = date.getMonth(); // 0-11
+      const isFirstHalf = date.getDate() <= 15;
+      
+      const monthName = date.toLocaleString('default', { month: 'long' });
+      const periodKey = `${year}-${String(month + 1).padStart(2, '0')}-${isFirstHalf ? 'H1' : 'H2'}`;
+      const periodLabel = `${monthName} ${isFirstHalf ? '1st half' : '2nd half'} ${year}`;
+
+      if (!groups[periodKey]) {
+        groups[periodKey] = {
+          key: periodKey,
+          label: periodLabel,
+          assigned: 0,
+          delivered: 0,
+          amount: 0,
+          year,
+          month
+        };
+      }
+
+      groups[periodKey].assigned += (Number(record.receivedDelivery) || 0) + (Number(record.receivedPickup) || 0);
+      groups[periodKey].delivered += (Number(record.totalCompleted) || 0);
+      groups[periodKey].amount += (Number(record.totalCompleted) || 0) * rate;
+    });
+
+    return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key));
+  }, [allRecords, settings]);
+
+  const handleUpdateReceived = async (periodKey, amount) => {
+    try {
+      await settlementService.saveSettlement(periodKey, amount);
+    } catch (error) {
+      console.error('Failed to update settlement:', error);
+    }
+  };
+
   const handleExport = async () => {
     setIsExporting(true);
     try {
@@ -354,7 +401,6 @@ export default function Reports() {
       setIsExporting(false);
     }
   };
-
   return (
     <motion.div 
       initial="hidden"
@@ -404,157 +450,262 @@ export default function Reports() {
         </div>
       </div>
 
-      {/* Stats Grid - 3x2 on large screens */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {metrics.map((metric, i) => (
-          <motion.div key={i} variants={itemVariants}>
-            <Card className={`relative overflow-hidden border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 group hover:translate-y-[-4px] transition-all duration-300`}>
-              <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${metric.gradient} rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110 duration-500`} />
-              
-              <CardContent className="p-5 sm:p-6">
-                <div className="flex items-start justify-between relative z-10">
-                  <div className={`p-2.5 rounded-xl bg-slate-500/10 mb-4`}>
-                    <metric.icon className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+      {/* Tab Switcher */}
+      <div className="flex p-1 bg-slate-100 dark:bg-slate-800/50 rounded-2xl w-fit">
+        <button
+          onClick={() => setActiveTab('analytics')}
+          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'analytics' 
+              ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' 
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Analytics
+        </button>
+        <button
+          onClick={() => setActiveTab('settlements')}
+          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'settlements' 
+              ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' 
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Settlements
+        </button>
+      </div>
+
+      <AnimatePresence mode="wait">
+        {activeTab === 'analytics' ? (
+          <motion.div
+            key="analytics"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="space-y-8"
+          >
+            {/* Stats Grid - 3x2 on large screens */}
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {metrics.map((metric, i) => (
+                <motion.div key={i} variants={itemVariants}>
+                  <Card className={`relative overflow-hidden border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 group hover:translate-y-[-4px] transition-all duration-300`}>
+                    <div className={`absolute top-0 right-0 w-32 h-32 bg-gradient-to-br ${metric.gradient} rounded-full -mr-16 -mt-16 transition-transform group-hover:scale-110 duration-500`} />
+                    
+                    <CardContent className="p-5 sm:p-6">
+                      <div className="flex items-start justify-between relative z-10">
+                        <div className={`p-2.5 rounded-xl bg-slate-500/10 mb-4`}>
+                          <metric.icon className="h-6 w-6 text-slate-600 dark:text-slate-400" />
+                        </div>
+                      </div>
+                      
+                      <div className="space-y-1 relative z-10">
+                        <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400">
+                          {metric.label}
+                        </p>
+                        <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
+                          {metric.value}
+                        </h3>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+
+            {/* Chart Section */}
+            <motion.div variants={itemVariants}>
+              <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+                <CardHeader className="border-b border-slate-50 dark:border-slate-700/50 p-6 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-emerald-500" />
+                      Performance Trends
+                    </CardTitle>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                      Visualizing cash flow over the selected period
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl">
+                    {['daily', 'weekly', 'monthly'].map(g => (
+                      <button 
+                        key={g}
+                        onClick={() => setTrendGranularity(g)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${trendGranularity === g ? 'bg-white dark:bg-slate-600 text-primary shadow-sm' : 'text-slate-500'}`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="h-[350px] w-full">
+                    <Line 
+                      data={trendData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        interaction: {
+                          mode: 'index',
+                          intersect: false,
+                        },
+                        scales: {
+                          x: { 
+                            grid: { display: false },
+                            ticks: { 
+                              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+                              font: { family: 'Inter', size: 11 }
+                            }
+                          },
+                          y: { 
+                            grid: { 
+                              color: theme === 'dark' ? 'rgba(71, 85, 105, 0.1)' : 'rgba(226, 232, 240, 0.8)',
+                              drawBorder: false
+                            },
+                            ticks: { 
+                              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+                              font: { family: 'Inter', size: 11 },
+                              callback: (val) => `₹${val.toLocaleString()}`
+                            }
+                          }
+                        },
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: {
+                            backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
+                            titleColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                            bodyColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                            borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
+                            borderWidth: 1,
+                            padding: 12,
+                            cornerRadius: 12,
+                            displayColors: true,
+                            usePointStyle: true,
+                            boxPadding: 6,
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Additional Quick Analysis */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <Card className="md:col-span-1 border-none bg-gradient-to-br from-indigo-600 to-indigo-700 text-white p-6 rounded-3xl shadow-lg shadow-indigo-600/20">
+                <div className="flex flex-col h-full justify-between">
+                  <div className="bg-white/20 w-12 h-12 rounded-2xl flex items-center justify-center mb-6">
+                    <PieChart className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <h4 className="text-indigo-100 text-sm font-medium mb-1">Current Focus</h4>
+                    <p className="text-xl font-bold leading-tight">Optimizing delivery routes and reducing fuel costs.</p>
                   </div>
                 </div>
-                
-                <div className="space-y-1 relative z-10">
-                  <p className="text-xs sm:text-sm font-semibold text-slate-500 dark:text-slate-400">
-                    {metric.label}
-                  </p>
-                  <h3 className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white">
-                    {metric.value}
-                  </h3>
-                </div>
+              </Card>
+              
+              <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+                 <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                      <TrendingUp className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Busiest Day</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">Monday</p>
+                    </div>
+                 </div>
+                 <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
+                    <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
+                      <FileText className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Top Area</p>
+                      <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">Central Hub</p>
+                    </div>
+                 </div>
+              </div>
+            </div>
+          </motion.div>
+        ) : (
+          <motion.div
+            key="settlements"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+          >
+            <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+              <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50">
+                <CardTitle className="text-lg font-bold flex items-center gap-2">
+                  <Banknote className="h-5 w-5 text-orange-500" />
+                  Bi-Monthly Settlements
+                </CardTitle>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Track payments received from the company for each half-month period.
+                </p>
+              </CardHeader>
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700/50">
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Period</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Assigned</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Delivered</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Amount (Global Rate: ₹{settings.ratePerParcel})</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Received</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Balance</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                    {settlementList.map((item) => {
+                      const received = settlements[item.key]?.received || 0;
+                      const balance = item.amount - received;
+                      
+                      return (
+                        <tr key={item.key} className="hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors">
+                          <td className="px-6 py-5 font-bold text-slate-700 dark:text-slate-200">{item.label}</td>
+                          <td className="px-6 py-5 font-bold text-slate-600 dark:text-slate-400">{item.assigned}</td>
+                          <td className="px-6 py-5 font-bold text-emerald-600 dark:text-emerald-400">{item.delivered}</td>
+                          <td className="px-6 py-5 font-bold text-slate-900 dark:text-white">₹{item.amount.toLocaleString()}</td>
+                          <td className="px-6 py-5">
+                            <div className="relative max-w-[150px]">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">₹</span>
+                              <input 
+                                type="number"
+                                defaultValue={received || ''}
+                                onBlur={(e) => handleUpdateReceived(item.key, e.target.value)}
+                                placeholder="0"
+                                className="w-full pl-7 pr-4 py-2 bg-slate-100 dark:bg-slate-700 rounded-xl border-none outline-none focus:ring-2 focus:ring-orange-500 transition-all font-bold text-slate-900 dark:text-white"
+                              />
+                            </div>
+                          </td>
+                          <td className={`px-6 py-5 font-black ${balance > 0 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                            {balance === 0 ? (
+                              <span className="flex items-center gap-1.5">
+                                <CheckCircle2 className="w-4 h-4" />
+                                Settled
+                              </span>
+                            ) : balance < 0 ? (
+                              `+₹${Math.abs(balance).toLocaleString()}`
+                            ) : (
+                              `₹${balance.toLocaleString()}`
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {settlementList.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
+                          No historical data found for settlements
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </CardContent>
             </Card>
           </motion.div>
-        ))}
-      </div>
-
-      {/* Chart Section */}
-      <motion.div variants={itemVariants}>
-        <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
-          <CardHeader className="border-b border-slate-50 dark:border-slate-700/50 p-6 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
-                <TrendingUp className="h-5 w-5 text-emerald-500" />
-                Performance Trends
-              </CardTitle>
-              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-                Visualizing cash flow over the selected period
-              </p>
-            </div>
-            <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl">
-              {['daily', 'weekly', 'monthly'].map(g => (
-                <button 
-                  key={g}
-                  onClick={() => setTrendGranularity(g)}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-bold capitalize transition-all ${trendGranularity === g ? 'bg-white dark:bg-slate-600 text-primary shadow-sm' : 'text-slate-500'}`}
-                >
-                  {g}
-                </button>
-              ))}
-            </div>
-            <div className="hidden lg:flex items-center gap-4">
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                <div className="w-3 h-3 rounded-full bg-emerald-500" />
-                Revenue
-              </div>
-              <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                <div className="w-3 h-3 rounded-full bg-rose-500" />
-                Expenses
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="p-6">
-            <div className="h-[350px] w-full">
-              <Line 
-                data={trendData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  interaction: {
-                    mode: 'index',
-                    intersect: false,
-                  },
-                  scales: {
-                    x: { 
-                      grid: { display: false },
-                      ticks: { 
-                        color: theme === 'dark' ? '#94a3b8' : '#64748b',
-                        font: { family: 'Inter', size: 11 }
-                      }
-                    },
-                    y: { 
-                      grid: { 
-                        color: theme === 'dark' ? 'rgba(71, 85, 105, 0.1)' : 'rgba(226, 232, 240, 0.8)',
-                        drawBorder: false
-                      },
-                      ticks: { 
-                        color: theme === 'dark' ? '#94a3b8' : '#64748b',
-                        font: { family: 'Inter', size: 11 },
-                        callback: (val) => `₹${val.toLocaleString()}`
-                      }
-                    }
-                  },
-                  plugins: {
-                    legend: { display: false },
-                    tooltip: {
-                      backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
-                      titleColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
-                      bodyColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
-                      borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
-                      borderWidth: 1,
-                      padding: 12,
-                      cornerRadius: 12,
-                      displayColors: true,
-                      usePointStyle: true,
-                      boxPadding: 6,
-                    }
-                  }
-                }}
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Additional Quick Analysis */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Card className="md:col-span-1 border-none bg-gradient-to-br from-indigo-600 to-indigo-700 text-white p-6 rounded-3xl shadow-lg shadow-indigo-600/20">
-          <div className="flex flex-col h-full justify-between">
-            <div className="bg-white/20 w-12 h-12 rounded-2xl flex items-center justify-center mb-6">
-              <PieChart className="h-6 w-6 text-white" />
-            </div>
-            <div>
-              <h4 className="text-indigo-100 text-sm font-medium mb-1">Current Focus</h4>
-              <p className="text-xl font-bold leading-tight">Optimizing delivery routes and reducing fuel costs.</p>
-            </div>
-          </div>
-        </Card>
-        
-        <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
-           <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                <TrendingUp className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Busiest Day</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">Monday</p>
-              </div>
-           </div>
-           <div className="bg-white dark:bg-slate-800 p-5 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                <FileText className="h-6 w-6" />
-              </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium">Top Area</p>
-                <p className="text-sm font-bold text-slate-900 dark:text-white mt-0.5">Central Hub</p>
-              </div>
-           </div>
-        </div>
-      </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
