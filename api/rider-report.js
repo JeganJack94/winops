@@ -190,11 +190,11 @@ _— Win Express Ops Team_`;
           from: `whatsapp:${fromNumber}`,
           to: `whatsapp:${toNumber}`
         });
-        console.log(`✅ Sent to ${riderName} (${toNumber}): ${resp.sid}`);
-        results.push({ rider: riderName, phone: toNumber, status: 'sent', sid: resp.sid });
+        console.log(`✅ Sent to ${actualWorkerName} (${toNumber}): ${resp.sid}`);
+        results.push({ rider: actualWorkerName, phone: toNumber, status: 'sent', sid: resp.sid });
       } catch (err) {
-        console.error(`❌ Failed to send to ${riderName}:`, err.message);
-        results.push({ rider: riderName, phone, status: 'failed', error: err.message });
+        console.error(`❌ Failed to send to ${actualWorkerName}:`, err.message);
+        results.push({ rider: actualWorkerName, phone, status: 'failed', error: err.message });
       }
 
       // Small delay to avoid rate limits
