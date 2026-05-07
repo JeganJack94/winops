@@ -8,8 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../hooks/useToast';
 import { deliveryService } from '../services/deliveryService';
 import { riderService } from '../services/riderService';
-import { clientService } from '../services/clientService';
-import { Briefcase, Building } from 'lucide-react';
+
 
 export default function Delivery() {
   const toast = useToast();
@@ -18,7 +17,6 @@ export default function Delivery() {
   const [activeDate, setActiveDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [riders, setRiders] = useState([]);
-  const [clients, setClients] = useState([]);
   const [allRecords, setAllRecords] = useState([]);
   
   // Local state for the daily summary inputs
@@ -37,8 +35,6 @@ export default function Delivery() {
   const [riderForm, setRiderForm] = useState({
     riderId: '',
     riderName: '',
-    clientId: '',
-    clientName: '',
     zone: '',
     assignedDelivery: 0,
     assignedPickup: 0,
@@ -53,12 +49,10 @@ export default function Delivery() {
 
   useEffect(() => {
     const unsubRiders = riderService.subscribeToRiders(setRiders);
-    const unsubClients = clientService.subscribeToClients(setClients);
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
 
     return () => {
       unsubRiders();
-      unsubClients();
       unsubRecords();
     };
   }, []);
@@ -196,8 +190,6 @@ export default function Delivery() {
     
     const riderEntry = {
       ...riderForm,
-      clientId: riderForm.clientId || (clients.length > 0 ? clients[0].id : ''),
-      clientName: riderForm.clientName || (clients.length > 0 ? clients[0].name : 'Default'),
       assignedDelivery: assignedDel,
       assignedPickup: assignedPick,
       completedDelivery: compDel,
@@ -294,8 +286,6 @@ export default function Delivery() {
     setRiderForm({
       riderId: '',
       riderName: '',
-      clientId: '',
-      clientName: '',
       zone: '',
       assignedDelivery: 0,
       assignedPickup: 0,
@@ -443,7 +433,6 @@ export default function Delivery() {
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-[11px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500">
                       <th className="px-5 py-4">Rider</th>
-                      <th className="px-5 py-4">Client</th>
                       <th className="px-5 py-4">Zone</th>
                       <th className="px-5 py-4 text-center">Assigned (D/P)</th>
                       <th className="px-5 py-4 text-center">Completed (D/P)</th>
@@ -476,11 +465,6 @@ export default function Delivery() {
                                 </span>
                               )}
                             </div>
-                          </td>
-                          <td className="px-5 py-4">
-                            <span className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider">
-                              {r.clientName}
-                            </span>
                           </td>
                           <td className="px-5 py-4 font-bold text-slate-500 dark:text-slate-400 text-xs">
                             <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">{r.zone || 'None'}</span>
@@ -614,26 +598,7 @@ export default function Delivery() {
                       {riders.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
                     </select>
                   </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase text-gray-500 flex items-center gap-1">
-                      <Building size={12} className="text-primary"/> Client
-                    </label>
-                    <select 
-                       className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
-                       required
-                       value={riderForm.clientId}
-                       onChange={(e) => {
-                         const sel = clients.find(c => c.id === e.target.value);
-                         setRiderForm({...riderForm, clientId: e.target.value, clientName: sel?.name || ''});
-                       }}
-                    >
-                      <option value="">-- Choose Client --</option>
-                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
-                  </div>
-                </div>
 
-                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-bold uppercase text-gray-500 flex items-center gap-1">
                       <MapPin size={12} className="text-primary"/> Zone
@@ -653,46 +618,44 @@ export default function Delivery() {
                   </div>
                 </div>
 
-                {riderForm.riderId && (
-                  <div className="space-y-2 p-3 bg-amber-50 dark:bg-amber-400/5 border border-amber-100 dark:border-amber-400/20 rounded-2xl">
-                    <label className="text-xs font-black uppercase text-amber-700 dark:text-amber-400">Actually Delivered By</label>
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setRiderForm({...riderForm, actualRiderId: '', actualRiderName: ''})}
-                        className={`flex-1 py-2 rounded-xl font-bold text-sm border transition-all ${
-                          !riderForm.actualRiderId
-                            ? 'bg-primary text-white border-primary shadow-sm'
-                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
-                        }`}
-                      >
-                        Own (Self)
-                      </button>
-                      <select
-                        className={`flex-1 rounded-xl px-3 py-2 outline-none text-sm font-bold border transition-all ${
-                          riderForm.actualRiderId
-                            ? 'bg-amber-600 text-white border-amber-600'
-                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
-                        }`}
-                        value={riderForm.actualRiderId}
-                        onChange={(e) => {
-                          const sel = riders.find(r => r.id === e.target.value);
-                          setRiderForm({...riderForm, actualRiderId: e.target.value, actualRiderName: sel?.name || ''});
-                        }}
-                      >
-                        <option value="">Substitute...</option>
-                        {riders.filter(r => r.id !== riderForm.riderId).map(r => (
-                          <option key={r.id} value={r.id}>{r.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                    {riderForm.actualRiderId && (
-                      <p className="text-xs text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
-                        ⚡ Salary will be credited to <strong>{riderForm.actualRiderName}</strong>
-                      </p>
-                    )}
+                <div className="space-y-2 p-3 bg-amber-50 dark:bg-amber-400/5 border border-amber-100 dark:border-amber-400/20 rounded-2xl">
+                  <label className="text-xs font-black uppercase text-amber-700 dark:text-amber-400">Actually Delivered By</label>
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setRiderForm({...riderForm, actualRiderId: '', actualRiderName: ''})}
+                      className={`flex-1 py-2 rounded-xl font-bold text-sm border transition-all ${
+                        !riderForm.actualRiderId
+                          ? 'bg-primary text-white border-primary shadow-sm'
+                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
+                      }`}
+                    >
+                      Own (Self)
+                    </button>
+                    <select
+                      className={`flex-1 rounded-xl px-3 py-2 outline-none text-sm font-bold border transition-all ${
+                        riderForm.actualRiderId
+                          ? 'bg-amber-600 text-white border-amber-600'
+                          : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-500'
+                      }`}
+                      value={riderForm.actualRiderId}
+                      onChange={(e) => {
+                        const sel = riders.find(r => r.id === e.target.value);
+                        setRiderForm({...riderForm, actualRiderId: e.target.value, actualRiderName: sel?.name || ''});
+                      }}
+                    >
+                      <option value="">Substitute...</option>
+                      {riders.filter(r => r.id !== riderForm.riderId).map(r => (
+                        <option key={r.id} value={r.id}>{r.name}</option>
+                      ))}
+                    </select>
                   </div>
-                )}
+                  {riderForm.actualRiderId && (
+                    <p className="text-xs text-amber-700 dark:text-amber-400 font-bold flex items-center gap-1">
+                      ⚡ Salary will be credited to <strong>{riderForm.actualRiderName}</strong>
+                    </p>
+                  )}
+                </div>
 
                 <div className="grid grid-cols-2 gap-4 pt-2">
                   <div className="p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-900/30">

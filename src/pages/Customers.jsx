@@ -109,7 +109,7 @@ export default function Customers() {
             <User className="text-primary" size={32} />
             Customer Directory
           </h1>
-          <p className="mt-1 text-gray-500 font-medium">Manage your delivery database and client contacts.</p>
+          <p className="mt-1 text-slate-500 font-medium">Manage your delivery database and contact records.</p>
         </div>
 
         <div className="flex items-center gap-3">

@@ -3,14 +3,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card'
 import { Button } from '../components/ui/Button';
 import { 
   Download, Calendar as CalendarIcon, TrendingUp, TrendingDown, DollarSign, 
-  Package, PieChart, FileText, Banknote, CheckCircle2, IndianRupee, Building, Receipt 
+  Package, PieChart, FileText, Banknote, CheckCircle2, IndianRupee
 } from 'lucide-react';
 import { deliveryService } from '../services/deliveryService';
 import { expenseService } from '../services/expenseService';
 import { settingsService } from '../services/settingsService';
 import { earningsService } from '../services/earningsService';
 import { settlementService } from '../services/settlementService';
-import { clientService } from '../services/clientService';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
@@ -66,13 +65,7 @@ export default function Reports() {
   const [settlements, setSettlements] = useState({});
   const [isExporting, setIsExporting] = useState(false);
   const [trendGranularity, setTrendGranularity] = useState('daily'); // daily, weekly, monthly
-  const [activeTab, setActiveTab] = useState('analytics'); // analytics, settlements, invoices
-  const [clients, setClients] = useState([]);
-  const [invoiceForm, setInvoiceForm] = useState({
-    clientId: '',
-    startDate: new Date(new Date().setDate(1)).toISOString().split('T')[0],
-    endDate: new Date().toISOString().split('T')[0]
-  });
+  const [activeTab, setActiveTab] = useState('analytics'); // analytics, settlements
 
   useEffect(() => {
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
@@ -80,14 +73,12 @@ export default function Reports() {
     const unsubPayouts = earningsService.subscribeToPayouts(setPayouts);
     const unsubSettings = settingsService.subscribeToSettings(setSettings);
     const unsubSettlements = settlementService.subscribeToSettlements(setSettlements);
-    const unsubClients = clientService.subscribeToClients(setClients);
     return () => {
       unsubRecords();
       unsubExpenses();
       unsubPayouts();
       unsubSettings();
       unsubSettlements();
-      unsubClients();
     };
   }, []);
 
@@ -414,115 +405,6 @@ export default function Reports() {
     }
   };
 
-  const generateClientInvoice = async () => {
-    if (!invoiceForm.clientId || !invoiceForm.startDate || !invoiceForm.endDate) {
-      alert('Please select client and date range');
-      return;
-    }
-
-    const client = clients.find(c => c.id === invoiceForm.clientId);
-    if (!client) return;
-
-    setIsExporting(true);
-    try {
-      const doc = new jsPDF();
-      const margin = 20;
-      
-      // Header
-      doc.setFontSize(22);
-      doc.setTextColor(30, 41, 59);
-      doc.text('INVOICE', margin, 30);
-      
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Invoice Date: ${new Date().toLocaleDateString()}`, doc.internal.pageSize.width - margin, 25, { align: 'right' });
-      doc.text(`Period: ${invoiceForm.startDate} to ${invoiceForm.endDate}`, doc.internal.pageSize.width - margin, 30, { align: 'right' });
-
-      // Company Info
-      doc.setFontSize(14);
-      doc.setTextColor(30, 41, 59);
-      doc.text(settings.companyName || 'Win Express', margin, 50);
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139);
-      doc.text(settings.email || 'winexpress630551@gmail.com', margin, 56);
-      doc.text('Win Express Logistics Hub', margin, 62);
-
-      // Client Info
-      doc.setFontSize(12);
-      doc.setTextColor(30, 41, 59);
-      doc.text('BILL TO:', margin, 85);
-      doc.setFontSize(14);
-      doc.text(client.name, margin, 93);
-      doc.setFontSize(10);
-      doc.setTextColor(100, 116, 139);
-      doc.text(`Code: ${client.code}`, margin, 99);
-      if (client.phone) doc.text(`Phone: ${client.phone}`, margin, 105);
-      if (client.email) doc.text(`Email: ${client.email}`, margin, 111);
-
-      // Data Calculation
-      const periodRecords = allRecords.filter(r => r.date >= invoiceForm.startDate && r.date <= invoiceForm.endDate);
-      const rows = [];
-      let totalQty = 0;
-
-      periodRecords.sort((a, b) => new Date(a.date) - new Date(b.date)).forEach(record => {
-        const clientRiders = (record.riders || []).filter(r => r.clientId === client.id);
-        if (clientRiders.length > 0) {
-          const qty = clientRiders.reduce((sum, r) => sum + (Number(r.completedDelivery) || 0), 0);
-          if (qty > 0) {
-            rows.push([
-              record.date,
-              'Delivery Service',
-              qty,
-              `Rs.${client.billingRate || 18}`,
-              `Rs.${(qty * (client.billingRate || 18)).toLocaleString()}`
-            ]);
-            totalQty += qty;
-          }
-        }
-      });
-
-      const totalAmount = totalQty * (client.billingRate || 18);
-
-      autoTable(doc, {
-        startY: 125,
-        head: [['Date', 'Description', 'Quantity (Parcels)', 'Rate', 'Amount']],
-        body: rows,
-        theme: 'striped',
-        headStyles: { fillColor: [79, 70, 229], textColor: 255, fontStyle: 'bold' },
-        columnStyles: {
-          0: { cellWidth: 30 },
-          2: { halign: 'center' },
-          3: { halign: 'right' },
-          4: { halign: 'right', fontStyle: 'bold' }
-        },
-        styles: { fontSize: 9, cellPadding: 5 }
-      });
-
-      const finalY = doc.lastAutoTable.finalY + 15;
-      
-      doc.setDrawColor(226, 232, 240);
-      doc.line(margin, finalY, doc.internal.pageSize.width - margin, finalY);
-      
-      doc.setFontSize(12);
-      doc.setTextColor(30, 41, 59);
-      doc.text('TOTAL AMOUNT DUE:', doc.internal.pageSize.width - 100, finalY + 15);
-      doc.setFontSize(20);
-      doc.setTextColor(79, 70, 229);
-      doc.text(`Rs.${totalAmount.toLocaleString()}`, doc.internal.pageSize.width - margin, finalY + 15, { align: 'right' });
-
-      // Footer
-      doc.setFontSize(10);
-      doc.setTextColor(148, 163, 184);
-      doc.text('Thank you for your business!', doc.internal.pageSize.width / 2, doc.internal.pageSize.height - 20, { align: 'center' });
-
-      doc.save(`Invoice_${client.code}_${invoiceForm.startDate}_${invoiceForm.endDate}.pdf`);
-    } catch (err) {
-      console.error(err);
-      alert('Failed to generate invoice');
-    } finally {
-      setIsExporting(false);
-    }
-  };
   return (
     <motion.div 
       initial="hidden"
@@ -593,16 +475,6 @@ export default function Reports() {
           }`}
         >
           Settlements
-        </button>
-        <button
-          onClick={() => setActiveTab('invoices')}
-          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
-            activeTab === 'invoices' 
-              ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' 
-              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
-          }`}
-        >
-          Invoices
         </button>
       </div>
 
@@ -836,111 +708,7 @@ export default function Reports() {
               </CardContent>
             </Card>
           </motion.div>
-        ) : (
-          <motion.div
-            key="invoices"
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: 20 }}
-            className="space-y-6"
-          >
-            <Card className="border-none shadow-xl bg-white dark:bg-slate-800 overflow-hidden rounded-3xl">
-              <CardHeader className="p-8 border-b border-slate-50 dark:border-slate-700/50">
-                <div className="flex items-center gap-4">
-                  <div className="p-3 bg-indigo-500/10 rounded-2xl">
-                    <Receipt className="h-8 w-8 text-indigo-600" />
-                  </div>
-                  <div>
-                    <CardTitle className="text-2xl font-black">Generate Client Invoice</CardTitle>
-                    <p className="text-slate-500 font-medium">Create professional PDF invoices for your vendors based on parcel volume.</p>
-                  </div>
-                </div>
-              </CardHeader>
-              <CardContent className="p-8">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                      <Building className="h-3 w-3" /> Select Client
-                    </label>
-                    <select
-                      className="w-full h-14 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={invoiceForm.clientId}
-                      onChange={e => setInvoiceForm({...invoiceForm, clientId: e.target.value})}
-                    >
-                      <option value="">-- Choose Client --</option>
-                      {clients.map(c => (
-                        <option key={c.id} value={c.id}>{c.name} ({c.code})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                      <CalendarIcon className="h-3 w-3" /> Start Date
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full h-14 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={invoiceForm.startDate}
-                      onChange={e => setInvoiceForm({...invoiceForm, startDate: e.target.value})}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-xs font-black uppercase text-slate-400 tracking-widest flex items-center gap-2">
-                      <CalendarIcon className="h-3 w-3" /> End Date
-                    </label>
-                    <input
-                      type="date"
-                      className="w-full h-14 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 rounded-2xl px-4 font-bold outline-none focus:ring-2 focus:ring-indigo-500"
-                      value={invoiceForm.endDate}
-                      onChange={e => setInvoiceForm({...invoiceForm, endDate: e.target.value})}
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-8 flex justify-end">
-                  <Button
-                    onClick={generateClientInvoice}
-                    disabled={isExporting || !invoiceForm.clientId}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white h-14 px-10 rounded-2xl font-black shadow-xl shadow-indigo-600/20 active:scale-95 transition-all flex items-center gap-3"
-                  >
-                    {isExporting ? (
-                      <div className="h-5 w-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                    ) : (
-                      <Download className="h-5 w-5" />
-                    )}
-                    {isExporting ? 'Generating...' : 'Generate PDF Invoice'}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-
-            {invoiceForm.clientId && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="grid grid-cols-1 md:grid-cols-2 gap-6"
-              >
-                <Card className="border-none shadow-lg bg-emerald-50 dark:bg-emerald-900/10 p-6 rounded-3xl border border-emerald-100 dark:border-emerald-900/30">
-                  <p className="text-xs font-black text-emerald-800 dark:text-emerald-400 uppercase tracking-widest mb-1">Estimated Volume</p>
-                  <p className="text-3xl font-black text-emerald-600">
-                    {allRecords
-                      .filter(r => r.date >= invoiceForm.startDate && r.date <= invoiceForm.endDate)
-                      .reduce((sum, r) => sum + (r.riders || [])
-                        .filter(rider => rider.clientId === invoiceForm.clientId)
-                        .reduce((s, rider) => s + (Number(rider.completedDelivery) || 0), 0)
-                      , 0)} parcels
-                  </p>
-                </Card>
-                <Card className="border-none shadow-lg bg-indigo-50 dark:bg-indigo-900/10 p-6 rounded-3xl border border-indigo-100 dark:border-indigo-900/30">
-                  <p className="text-xs font-black text-indigo-800 dark:text-indigo-400 uppercase tracking-widest mb-1">Billing Rate</p>
-                  <p className="text-3xl font-black text-indigo-600">
-                    ₹{clients.find(c => c.id === invoiceForm.clientId)?.billingRate || 18} / parcel
-                  </p>
-                </Card>
-              </motion.div>
-            )}
-          </motion.div>
-        )}
+        ) : null}
       </AnimatePresence>
     </motion.div>
   );
