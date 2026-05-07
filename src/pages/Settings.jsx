@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { User, Users, Sun, Moon, LogOut, IndianRupee, Trash2, Plus, X, Phone, Mail, Pencil } from 'lucide-react';
+import { User, Users, Sun, Moon, LogOut, IndianRupee, Trash2, Plus, X, Phone, Mail, Pencil, Download, MessageSquare } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { riderService } from '../services/riderService';
 import { settingsService } from '../services/settingsService';
+import { backupService } from '../services/backupService';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -74,6 +75,7 @@ export default function Settings() {
   const [newRiderName, setNewRiderName] = useState('');
   const [newRiderPhone, setNewRiderPhone] = useState('');
   const [newRiderRate, setNewRiderRate] = useState('');
+  const [newRiderWhatsapp, setNewRiderWhatsapp] = useState(true);
   const [showAddRider, setShowAddRider] = useState(false);
   const [isAddingRider, setIsAddingRider] = useState(false);
   const [editingRider, setEditingRider] = useState(null);
@@ -82,6 +84,9 @@ export default function Settings() {
   const [showResetModal, setShowResetModal] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
   const [resetConfirmWord, setResetConfirmWord] = useState('');
+  
+  // Backup State
+  const [isBackingUp, setIsBackingUp] = useState(false);
 
 
   const [settings, setSettings] = useState({
@@ -116,6 +121,7 @@ export default function Settings() {
     setNewRiderName('');
     setNewRiderPhone('');
     setNewRiderRate('');
+    setNewRiderWhatsapp(true);
     setEditingRider(null);
     setShowAddRider(false);
   };
@@ -134,6 +140,7 @@ export default function Settings() {
         await riderService.updateRider(editingRider.id, {
           name: newRiderName.trim(),
           phone: newRiderPhone.trim(),
+          whatsappEnabled: newRiderWhatsapp,
           ...(newRiderRate !== '' && { ratePerParcel: Number(newRiderRate) })
         });
         toast.success('Rider details updated');
@@ -141,6 +148,7 @@ export default function Settings() {
         await riderService.addRider({
           name: newRiderName.trim(),
           phone: newRiderPhone.trim(),
+          whatsappEnabled: newRiderWhatsapp,
           status: 'Active',
           joinedAt: new Date().toISOString(),
           ...(newRiderRate !== '' && { ratePerParcel: Number(newRiderRate) })
@@ -161,8 +169,20 @@ export default function Settings() {
     setEditingRider(rider);
     setNewRiderName(rider.name);
     setNewRiderPhone(rider.phone);
-    setNewRiderRate(rider.ratePerParcel !== undefined ? String(rider.ratePerParcel) : '');
+    setNewRiderRate(rider.ratePerParcel?.toString() || '');
+    setNewRiderWhatsapp(rider.whatsappEnabled !== false);
     setShowAddRider(true);
+  };
+
+  const toggleWhatsapp = async (rider) => {
+    try {
+      await riderService.updateRider(rider.id, {
+        whatsappEnabled: rider.whatsappEnabled === false
+      });
+      toast.success(`${rider.name}'s WhatsApp reports ${rider.whatsappEnabled === false ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      toast.error('Failed to update preference');
+    }
   };
 
   const handleDeleteRider = async (id) => {
@@ -196,6 +216,19 @@ export default function Settings() {
       toast.error('Failed to wipe data.');
     } finally {
       setIsResetting(false);
+    }
+  };
+
+  const handleDownloadBackup = async () => {
+    setIsBackingUp(true);
+    try {
+      const result = await backupService.downloadBackup();
+      toast.success(`Backup downloaded: ${result.filename} (${result.collectionCount} collections)`);
+    } catch (error) {
+      console.error('Backup failed:', error);
+      toast.error('Backup failed. Please try again.');
+    } finally {
+      setIsBackingUp(false);
     }
   };
 
@@ -312,6 +345,41 @@ export default function Settings() {
               </Button>
             </CardContent>
           </Card>
+
+          {/* Backup Card */}
+          <Card className="border border-emerald-200 shadow-xl shadow-emerald-200/30 dark:shadow-none bg-emerald-50 dark:bg-emerald-900/10 dark:border-emerald-900/50 overflow-hidden">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-bold text-emerald-700 dark:text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                <Download className="w-4 h-4" />
+                Data Backup
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4 p-6 pt-2">
+              <div>
+                <p className="text-sm font-bold text-emerald-800 dark:text-emerald-200">Download All Data</p>
+                <p className="text-xs text-emerald-700 dark:text-emerald-400 font-medium leading-relaxed mt-1">
+                  Exports all delivery records, expenses, settlements, riders and settings as a single JSON file. Upload it to Google Drive for safekeeping.
+                </p>
+              </div>
+              <Button
+                onClick={handleDownloadBackup}
+                disabled={isBackingUp}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold h-11 rounded-xl shadow-lg shadow-emerald-600/20 active:scale-95 transition-all flex items-center justify-center gap-2"
+              >
+                {isBackingUp ? (
+                  <>
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                    Preparing backup...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Download Backup
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Right Column - Management */}
@@ -343,6 +411,7 @@ export default function Settings() {
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Name</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Phone</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">Rate (₹/px)</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">WhatsApp</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Actions</th>
                     </tr>
@@ -367,6 +436,19 @@ export default function Settings() {
                           ) : (
                             <span className="text-xs text-slate-400 font-medium italic">Using Global</span>
                           )}
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <button
+                            onClick={() => toggleWhatsapp(rider)}
+                            className={`p-2 rounded-lg transition-all ${
+                              rider.whatsappEnabled !== false
+                                ? 'bg-green-50 dark:bg-green-500/10 text-green-600'
+                                : 'bg-slate-50 dark:bg-slate-700 text-slate-400'
+                            }`}
+                            title={rider.whatsappEnabled !== false ? 'Notifications Enabled' : 'Notifications Disabled'}
+                          >
+                            <MessageSquare className={`w-4 h-4 ${rider.whatsappEnabled !== false ? 'fill-green-600/10' : ''}`} />
+                          </button>
                         </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tight ${rider.status === 'Active'
@@ -399,7 +481,7 @@ export default function Settings() {
                     ))}
                     {riders.length === 0 && (
                       <tr>
-                        <td colSpan="5" className="px-6 py-12 text-center">
+                        <td colSpan="6" className="px-6 py-12 text-center">
                           <div className="flex flex-col items-center gap-2 opacity-40">
                             <Users className="w-10 h-10" />
                             <p className="text-sm font-bold">No riders in the directory</p>
