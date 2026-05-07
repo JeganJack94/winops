@@ -174,6 +174,14 @@ export default function Dashboard() {
     const delivered = todayRecord ? (Number(todayRecord.totalCompleted) || 0) : 0;
     const pending = todayRecord ? (Number(todayRecord.totalPending) || 0) : 0;
 
+    // P&L Calculation (Approximate)
+    // Revenue = Total Delivered * 35 (Assume ₹35 per parcel revenue)
+    const monthlyDelivered = allRecords
+      .filter(e => e.date && e.date.startsWith(currentMonth))
+      .reduce((acc, e) => acc + (Number(e.totalCompleted) || 0), 0);
+    const estimatedRevenue = monthlyDelivered * 35;
+    const netProfit = estimatedRevenue - totalOutflow;
+
     return [
       {
         title: 'Today Received',
@@ -182,25 +190,51 @@ export default function Dashboard() {
         gradient: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',
       },
       {
-        title: 'Delivered',
+        title: 'Today Delivered',
         value: delivered.toString(),
         icon: CheckCircle2,
         gradient: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)',
       },
       {
-        title: 'Pending',
-        value: Math.max(0, pending).toString(),
-        icon: Clock,
-        gradient: 'linear-gradient(135deg, #92400e 0%, #f59e0b 100%)',
+        title: 'Net Profit (Est.)',
+        value: `₹${netProfit.toLocaleString('en-IN')}`,
+        icon: TrendingUp,
+        gradient: netProfit >= 0 
+          ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' 
+          : 'linear-gradient(135deg, #9f1239 0%, #f43f5e 100%)',
       },
       {
         title: 'Monthly Spending',
         value: `₹${totalOutflow.toLocaleString('en-IN')}`,
         icon: IndianRupee,
-        gradient: 'linear-gradient(135deg, #9f1239 0%, #f43f5e 100%)',
+        gradient: 'linear-gradient(135deg, #4b5563 0%, #1f2937 100%)',
       },
     ];
-  }, [allRecords, expenses, today, currentMonth]);
+  }, [allRecords, expenses, payouts, today, currentMonth]);
+
+  /* ──── Leaderboard logic ──── */
+  const leaderboard = useMemo(() => {
+    const monthlyRecords = allRecords.filter(r => r.date && r.date.startsWith(currentMonth));
+    const riderStats = {};
+
+    monthlyRecords.forEach(record => {
+      (record.riders || []).forEach(r => {
+        if (!riderStats[r.riderName]) {
+          riderStats[r.riderName] = { name: r.riderName, completed: 0, assigned: 0 };
+        }
+        riderStats[r.riderName].completed += (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
+        riderStats[r.riderName].assigned += (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
+      });
+    });
+
+    return Object.values(riderStats)
+      .map(r => ({
+        ...r,
+        successRate: r.assigned > 0 ? Math.round((r.completed / r.assigned) * 100) : 0
+      }))
+      .sort((a, b) => b.successRate - a.successRate || b.completed - a.completed)
+      .slice(0, 5);
+  }, [allRecords, currentMonth]);
 
   /* ──── Chart data ──── */
   const performanceData = useMemo(() => {
@@ -209,12 +243,7 @@ export default function Dashboard() {
 
     const labels = riders.map(r => r.riderName || 'Unknown');
     const delivered = riders.map(r => (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0));
-    const pending = riders.map(r => {
-      const totalAssigned = (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
-      const totalCompleted = (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
-      return Math.max(0, totalAssigned - totalCompleted);
-    });
-
+    
     return {
       labels: labels.length > 0 ? labels : ['No Activity'],
       datasets: [
@@ -223,13 +252,7 @@ export default function Dashboard() {
           data: delivered.length > 0 ? delivered : [0],
           backgroundColor: 'rgba(16, 185, 129, 0.85)',
           borderRadius: 6,
-        },
-        {
-          label: 'Pending',
-          data: pending.length > 0 ? pending : [0],
-          backgroundColor: 'rgba(245, 158, 11, 0.85)',
-          borderRadius: 6,
-        },
+        }
       ],
     };
   }, [allRecords, today]);
@@ -268,29 +291,34 @@ export default function Dashboard() {
         className="flex flex-col md:flex-row md:items-end justify-between gap-4"
       >
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Overview</h2>
-          <p className="text-gray-500 dark:text-gray-400">Welcome back, here's what's happening today.</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Operations Hub</h2>
+          <p className="text-gray-500 dark:text-gray-400">Monitoring performance and financial health.</p>
         </div>
-        <div className="text-sm text-gray-500 dark:text-gray-400 font-medium">
-          {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+        <div className="flex items-center gap-3">
+           <div className="text-right">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-widest leading-none mb-1">Current Date</p>
+              <p className="text-sm font-black text-gray-700 dark:text-gray-300">
+                {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+              </p>
+           </div>
         </div>
       </motion.div>
 
       {/* ── Top 2 summary cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <SummaryCard
-          title="Overall Received / Delivered"
-          subtitle="Total volume since the beginning"
-          value={`${summaryStats.overallReceived.toLocaleString('en-IN')} / ${summaryStats.overallDelivered.toLocaleString('en-IN')}`}
+          title="Total Deliveries"
+          subtitle="Cumulative volume across all time"
+          value={summaryStats.overallDelivered.toLocaleString('en-IN')}
           icon={PackageCheck}
           accent="#6366f1"
           delay={0.05}
         />
         <SummaryCard
-          title="Monthly Received / Delivered"
-          subtitle={`Volume this month (${new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })})`}
-          value={`${summaryStats.monthlyReceived.toLocaleString('en-IN')} / ${summaryStats.monthlyDelivered.toLocaleString('en-IN')}`}
-          icon={CalendarDays}
+          title="Revenue (Est. Month)"
+          subtitle={`Based on ₹35/parcel for ${new Date().toLocaleDateString('en-US', { month: 'long' })}`}
+          value={`₹${(monthlyDelivered * 35).toLocaleString('en-IN')}`}
+          icon={IndianRupee}
           accent="#0ea5e9"
           delay={0.1}
         />
@@ -310,21 +338,24 @@ export default function Dashboard() {
         ))}
       </div>
 
-      {/* ── Chart + Recent Expenses ── */}
+      {/* ── Chart + Leaderboard ── */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle>Today's Rider Performance</CardTitle>
+        <Card className="lg:col-span-2 overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 border-b border-gray-100 dark:border-white/5 bg-gray-50/50 dark:bg-white/2">
+            <div>
+              <CardTitle>Today's Performance Breakdown</CardTitle>
+              <p className="text-xs text-gray-400 mt-1">Real-time rider delivery status</p>
+            </div>
             <button
                onClick={shareRiderPerformance}
-               className="p-2 text-gray-500 hover:text-primary dark:text-gray-400 dark:hover:text-primary transition-colors cursor-pointer"
+               className="p-2.5 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500 hover:text-white rounded-xl transition-all active:scale-95"
                title="Share Performance via WhatsApp"
             >
               <Share2 size={18} />
             </button>
           </CardHeader>
           <CardContent>
-            <div className="h-[300px] w-full mt-4">
+            <div className="h-[320px] w-full mt-6">
               <Bar
                 data={performanceData}
                 options={{
@@ -332,31 +363,31 @@ export default function Dashboard() {
                   maintainAspectRatio: false,
                   scales: {
                     x: {
-                      stacked: true,
                       grid: { display: false },
-                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' },
+                      ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280', font: { weight: '600' } },
                     },
                     y: {
-                      stacked: true,
                       border: { display: false },
                       grid: {
                         color: theme === 'dark'
-                          ? 'rgba(75,85,99,0.2)'
-                          : 'rgba(229,231,235,0.5)',
+                          ? 'rgba(75,85,99,0.1)'
+                          : 'rgba(229,231,235,0.4)',
                       },
                       ticks: { color: theme === 'dark' ? '#9ca3af' : '#6b7280' },
                     },
                   },
                   plugins: {
-                    legend: {
-                      position: 'top',
-                      align: 'end',
-                      labels: {
-                        usePointStyle: true,
-                        boxWidth: 8,
-                        color: theme === 'dark' ? '#d1d5db' : '#374151',
-                      },
-                    },
+                    legend: { display: false },
+                    tooltip: {
+                       backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
+                       titleColor: theme === 'dark' ? '#ffffff' : '#1e293b',
+                       bodyColor: theme === 'dark' ? '#9ca3af' : '#64748b',
+                       borderColor: theme === 'dark' ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)',
+                       borderWidth: 1,
+                       padding: 12,
+                       boxPadding: 6,
+                       usePointStyle: true,
+                    }
                   },
                 }}
               />
@@ -364,34 +395,101 @@ export default function Dashboard() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Recent Expenses</CardTitle>
+        {/* 🏆 Leaderboard Card */}
+        <Card className="overflow-hidden border-none shadow-xl shadow-indigo-500/5">
+          <CardHeader className="bg-gradient-to-br from-indigo-600 to-blue-700 text-white pb-6">
+            <div className="flex items-center gap-3">
+               <div className="p-2 bg-white/20 rounded-lg backdrop-blur-md">
+                 <TrendingUp size={20} />
+               </div>
+               <div>
+                 <CardTitle className="text-white">Top Performers</CardTitle>
+                 <p className="text-xs text-indigo-100 mt-0.5">Ranked by Success Rate</p>
+               </div>
+            </div>
           </CardHeader>
-          <CardContent className="p-0">
-            <div className="divide-y divide-gray-100 dark:divide-gray-800">
-              {recentExpenses.map((expense) => (
+          <CardContent className="p-0 -mt-4 bg-white dark:bg-[#1e253c] rounded-t-3xl relative z-10">
+            <div className="divide-y divide-gray-100 dark:divide-white/5">
+              {leaderboard.map((r, i) => (
                 <div
-                  key={expense.id}
-                  className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                  key={r.name}
+                  className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/2 transition-colors"
                 >
-                  <div>
-                    <p className="font-medium text-gray-900 dark:text-white">{expense.type}</p>
-                    <p className="text-sm text-gray-500">{expense.notes}</p>
+                  <div className="flex items-center gap-4">
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${
+                      i === 0 ? 'bg-yellow-100 text-yellow-600' :
+                      i === 1 ? 'bg-slate-100 text-slate-500' :
+                      i === 2 ? 'bg-orange-100 text-orange-600' :
+                      'bg-gray-100 text-gray-400'
+                    }`}>
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : i + 1}
+                    </div>
+                    <div>
+                      <p className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                        {r.name}
+                        {r.successRate >= 95 && (
+                          <span className="px-1.5 py-0.5 bg-emerald-500 text-[8px] text-white rounded font-black uppercase">Elite</span>
+                        )}
+                      </p>
+                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">
+                        {r.completed} Completed
+                      </p>
+                    </div>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-rose-500 dark:text-rose-400">₹{expense.amount}</p>
-                    <p className="text-xs text-gray-400">{expense.date}</p>
+                    <p className={`text-lg font-black font-mono ${
+                      r.successRate >= 90 ? 'text-emerald-500' : 
+                      r.successRate >= 80 ? 'text-blue-500' : 
+                      'text-rose-500'
+                    }`}>
+                      {r.successRate}%
+                    </p>
                   </div>
                 </div>
               ))}
-              {recentExpenses.length === 0 && (
-                <div className="p-8 text-center text-gray-400 text-sm">No expenses recorded yet.</div>
+              {leaderboard.length === 0 && (
+                <div className="p-12 text-center">
+                  <PackageCheck size={40} className="mx-auto text-gray-200 mb-3" />
+                  <p className="text-gray-400 text-sm font-medium">No performance data yet.</p>
+                </div>
               )}
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* ── Recent Expenses ── */}
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between">
+          <div>
+            <CardTitle>Recent Outflow</CardTitle>
+            <p className="text-xs text-gray-400 mt-1">Expenses and Payouts</p>
+          </div>
+          <CalendarDays className="text-gray-300" size={20} />
+        </CardHeader>
+        <CardContent className="p-0">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 divide-x divide-y divide-gray-100 dark:divide-white/5 border-t border-gray-100 dark:border-white/5">
+            {recentExpenses.map((expense) => (
+              <div
+                key={expense.id}
+                className="p-4 flex items-center justify-between hover:bg-gray-50 dark:hover:bg-white/2 transition-colors"
+              >
+                <div>
+                  <p className="font-bold text-gray-900 dark:text-white text-sm">{expense.type}</p>
+                  <p className="text-xs text-gray-400 truncate max-w-[150px]">{expense.notes || 'No description'}</p>
+                </div>
+                <div className="text-right">
+                  <p className="font-black text-rose-500 dark:text-rose-400 font-mono">₹{expense.amount}</p>
+                  <p className="text-[10px] text-gray-400 font-bold">{expense.date}</p>
+                </div>
+              </div>
+            ))}
+            {recentExpenses.length === 0 && (
+              <div className="p-8 text-center text-gray-400 text-sm col-span-full">No recent outflow recorded.</div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

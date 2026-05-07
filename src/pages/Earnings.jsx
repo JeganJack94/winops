@@ -41,6 +41,7 @@ export default function Earnings() {
   const [activeMonth, setActiveMonth] = useState(new Date().toISOString().slice(0, 7));
   const [selectedRiderId, setSelectedRiderId] = useState('');
   const [indivMonth, setIndivMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [historyFilter, setHistoryFilter] = useState('All'); // 'All', 'Monthly', 'Yearly'
   
   // Data
   const [riders, setRiders] = useState([]);
@@ -296,9 +297,19 @@ export default function Earnings() {
 
     const avgSR = successCount > 0 ? Math.round(totalSuccess / successCount) : 0;
 
-    // Individual Payouts for this rider in this month
+    // Monthly payouts for balance calculation
     const riderMonthPayouts = payouts.filter(p => p.riderId === selectedRiderId && p.date.startsWith(indivMonth));
     const totalPaid = riderMonthPayouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+
+    // Filtered payouts for history list
+    const allRiderPayouts = payouts.filter(p => p.riderId === selectedRiderId).sort((a, b) => b.date.localeCompare(a.date));
+    let filteredPayouts = allRiderPayouts;
+    if (historyFilter === 'Monthly') {
+      filteredPayouts = allRiderPayouts.filter(p => p.date.startsWith(indivMonth));
+    } else if (historyFilter === 'Yearly') {
+      filteredPayouts = allRiderPayouts.filter(p => p.date.startsWith(indivMonth.slice(0, 4)));
+    }
+    const filteredTotalPaid = filteredPayouts.reduce((s, p) => s + (Number(p.amount) || 0), 0);
 
     return {
       rider,
@@ -310,15 +321,17 @@ export default function Earnings() {
       totalDelivered,
       totalSalary,
       avgSR,
-      payouts: riderMonthPayouts,
+      payouts: filteredPayouts,
       totalPaid,
+      filteredTotalPaid,
       balanceDue: totalSalary - totalPaid
     };
-  }, [selectedRiderId, indivMonth, dailyRecords, overrides, riders, globalSettings, payouts]);
+  }, [selectedRiderId, indivMonth, dailyRecords, overrides, riders, globalSettings, payouts, historyFilter]);
 
   // ─── PAYOUT MODAL logic ───
   const [showPayoutModal, setShowPayoutModal] = useState(false);
   const [payoutForm, setPayoutForm] = useState({
+    id: null,
     riderId: '',
     amount: '',
     date: new Date().toISOString().split('T')[0],
@@ -326,12 +339,26 @@ export default function Earnings() {
     notes: ''
   });
 
-  const openPayoutModal = (rId = '') => {
-    setPayoutForm({
-      ...payoutForm,
-      riderId: rId || selectedRiderId,
-      date: new Date().toISOString().split('T')[0]
-    });
+  const openPayoutModal = (rId = '', existingPayout = null) => {
+    if (existingPayout) {
+      setPayoutForm({
+        id: existingPayout.id,
+        riderId: existingPayout.riderId,
+        amount: existingPayout.amount,
+        date: existingPayout.date,
+        type: existingPayout.type,
+        notes: existingPayout.notes || ''
+      });
+    } else {
+      setPayoutForm({
+        id: null,
+        riderId: rId || selectedRiderId,
+        amount: '',
+        date: new Date().toISOString().split('T')[0],
+        type: 'Advance',
+        notes: ''
+      });
+    }
     setShowPayoutModal(true);
   };
 
@@ -339,15 +366,27 @@ export default function Earnings() {
     e.preventDefault();
     try {
       if (!payoutForm.riderId) return toast.error("Select a rider");
-      await earningsService.addPayout({
-        ...payoutForm,
-        amount: Number(payoutForm.amount)
-      });
-      toast.success("Payout recorded successfully");
+      
+      const payoutData = {
+        riderId: payoutForm.riderId,
+        date: payoutForm.date,
+        type: payoutForm.type,
+        amount: Number(payoutForm.amount),
+        notes: payoutForm.notes
+      };
+
+      if (payoutForm.id) {
+        await earningsService.updatePayout(payoutForm.id, payoutData);
+        toast.success("Transaction updated successfully");
+      } else {
+        await earningsService.addPayout(payoutData);
+        toast.success("Transaction recorded successfully");
+      }
+      
       setShowPayoutModal(false);
-      setPayoutForm({ ...payoutForm, amount: '', notes: '' });
+      setPayoutForm({ id: null, riderId: '', amount: '', date: new Date().toISOString().split('T')[0], type: 'Advance', notes: '' });
     } catch {
-      toast.error("Failed to save payout");
+      toast.error("Failed to save transaction");
     }
   };
 
@@ -692,11 +731,26 @@ export default function Earnings() {
                 {/* Payout History Section */}
                 <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl flex flex-col">
                   <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
-                    <div>
+                    <div className="flex flex-col">
                       <h3 className="font-black text-gray-800 dark:text-white flex items-center gap-2">
                         <History size={18} className="text-amber-500" /> Payout History
                       </h3>
-                      <p className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">{indivMonth}</p>
+                      <div className="flex items-center gap-2 mt-1">
+                        <select 
+                          value={historyFilter}
+                          onChange={(e) => setHistoryFilter(e.target.value)}
+                          className="text-[10px] bg-gray-100 dark:bg-gray-800 border-none rounded-lg px-2 py-1 font-bold text-gray-500 uppercase cursor-pointer outline-none hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"
+                        >
+                          <option value="All">All Transactions</option>
+                          <option value="Monthly">This Month</option>
+                          <option value="Yearly">This Year</option>
+                        </select>
+                        <span className="text-[10px] text-gray-400 font-bold uppercase tracking-wider">• {
+                          historyFilter === 'All' ? 'Complete History' : 
+                          historyFilter === 'Monthly' ? indivMonth : 
+                          indivMonth.slice(0, 4)
+                        }</span>
+                      </div>
                     </div>
                     <button onClick={() => openPayoutModal()} className="p-2 bg-primary/10 text-primary rounded-xl hover:bg-primary/20 transition-all">
                       <Plus size={18} />
@@ -705,16 +759,28 @@ export default function Earnings() {
                   <div className="flex-1 overflow-y-auto max-h-[300px] p-4 space-y-3">
                     {individualData.payouts.map(p => (
                       <div key={p.id} className="group p-3 bg-gray-50 dark:bg-gray-800/50 rounded-2xl flex items-center justify-between hover:ring-2 hover:ring-primary/20 transition-all">
-                        <div>
-                          <p className="text-xs font-black text-gray-700 dark:text-gray-200">{p.type}</p>
-                          <p className="text-[10px] text-gray-400 font-bold">{p.date}</p>
-                          {p.notes && <p className="text-[10px] text-indigo-500 font-medium italic mt-0.5">"{p.notes}"</p>}
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <p className="font-mono font-black text-rose-500">₹{p.amount.toLocaleString()}</p>
-                          <button onClick={() => deletePayout(p.id)} className="opacity-0 group-hover:opacity-100 p-1.5 text-gray-400 hover:text-rose-500 transition-all">
-                            <Trash2 size={12} />
-                          </button>
+                        <div className="flex items-center justify-between w-full">
+                          <div>
+                            <span className={`text-[10px] uppercase tracking-widest font-black px-2 py-0.5 rounded-full mb-1 inline-block ${
+                              p.type === 'Salary' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-500/20 dark:text-emerald-400' : 'bg-gray-100 text-gray-500 dark:bg-white/5'
+                            }`}>
+                              {p.type}
+                            </span>
+                            <p className="text-[10px] text-gray-400 font-bold">{p.date}</p>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <p className={`font-mono font-black text-lg ${p.type === 'Salary' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                              {p.type === 'Salary' ? '+' : '-'}₹{p.amount.toLocaleString()}
+                            </p>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                              <button onClick={() => openPayoutModal(null, p)} className="p-1.5 text-gray-400 hover:text-primary transition-all">
+                                <Edit2 size={12} />
+                              </button>
+                              <button onClick={() => deletePayout(p.id)} className="p-1.5 text-gray-400 hover:text-rose-500 transition-all">
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -727,8 +793,8 @@ export default function Earnings() {
                   </div>
                   <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border-t border-gray-100 dark:border-gray-800 rounded-b-[2rem]">
                     <div className="flex justify-between items-center text-xs font-black uppercase text-gray-500">
-                      <span>Total Paid</span>
-                      <span className="text-rose-500">₹{individualData.totalPaid.toLocaleString()}</span>
+                      <span>{historyFilter === 'All' ? 'Total Payouts' : historyFilter === 'Monthly' ? 'Paid this Month' : 'Paid this Year'}</span>
+                      <span className="text-rose-500">₹{individualData.filteredTotalPaid.toLocaleString()}</span>
                     </div>
                   </div>
                 </div>
@@ -805,7 +871,7 @@ export default function Earnings() {
           <div className="relative w-full max-w-sm bg-white dark:bg-gray-900 rounded-[28px] shadow-2xl overflow-hidden border border-gray-100 dark:border-gray-800">
             <div className="p-6 border-b border-gray-100 dark:border-gray-800 bg-gray-50/50 dark:bg-gray-800/50">
               <h3 className="text-xl font-black flex items-center gap-2 italic">
-                <CreditCard className="text-primary" size={20} /> Record Payout
+                <CreditCard className="text-primary" size={20} /> {payoutForm.id ? 'Edit Transaction' : 'Record Transaction'}
               </h3>
               <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mt-1">Salary & Advances</p>
             </div>
@@ -843,6 +909,7 @@ export default function Earnings() {
                   >
                     <option value="Advance">Advance</option>
                     <option value="Weekly">Weekly</option>
+                    <option value="Salary">Salary</option>
                     <option value="Final">Final</option>
                   </select>
                 </div>
@@ -873,7 +940,7 @@ export default function Earnings() {
               
               <div className="pt-4">
                 <button type="submit" className="w-full bg-primary hover:bg-primary-hover text-white font-black py-4 rounded-2xl shadow-xl shadow-primary/20 transition-all active:scale-95 flex items-center justify-center gap-2">
-                  <CreditCard size={18} /> Confirm Payment
+                  <CreditCard size={18} /> {payoutForm.id ? 'Save Changes' : 'Confirm Payment'}
                 </button>
               </div>
             </form>

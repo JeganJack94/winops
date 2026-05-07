@@ -49,99 +49,177 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Database not securely configured.' });
   }
 
-  try {
-    // 1. Get Today's Date (IST Adjustment for UTC Server)
-    const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
-    const istDate = new Intl.DateTimeFormat('en-CA', options).format(new Date());
+    const reportType = req.query.type || 'daily'; // daily, pending, recap
     
-    // 2. Fetch Overall Summary
-    const summarySnapshot = await db.collection('daily_records').where('date', '==', istDate).get();
+    let messageBody = '';
     
-    // 3. Fetch Rider Entries for breakdown and Zone analysis
-    // We'll filter in memory as Firestore complex queries might be missing indexes
-    const ridersSnapshot = await db.collection('rider_entries')
-      .where('timestamp', '>=', `${istDate}T00:00:00`)
-      .where('timestamp', '<=', `${istDate}T23:59:59`)
-      .get();
-
-    let messageBody = `*WinOps Automated Status Report - ${istDate}*\n\n`;
-
-    if (summarySnapshot.empty) {
-      messageBody += `⚠️ *No operational records found for today.*\n\nOperations might be paused or data entry is pending.`;
+    if (reportType === 'pending') {
+      messageBody = `⏳ *WinOps 4 PM Pending Alert - ${istDate}*\n\n`;
+    } else if (reportType === 'recap') {
+      messageBody = `📅 *WinOps Weekly Recap (Sunday) - ${istDate}*\n\n`;
     } else {
-      const record = summarySnapshot.docs[0].data();
-      
-      // I. OVERALL SUMMARY
-      messageBody += `📈 *OVERALL SUMMARY*\n`;
-      messageBody += `📦 Total Assigned: ${record.totalAssigned || 0}\n`;
-      messageBody += `✅ Total Completed: ${record.totalCompleted || 0}\n`;
-      messageBody += `⏳ Total Pending: ${record.totalPending || 0}\n`;
-      messageBody += `💰 Total Collection: ₹${(record.totalAmount || 0).toLocaleString()}\n`;
-      messageBody += `🎯 Overall Success: ${record.successRate || 0}%\n\n`;
+      messageBody = `*WinOps Daily Status - ${istDate}*\n\n`;
+    }
 
-      // II. RIDER PERFORMANCE
-      if (!ridersSnapshot.empty) {
-        messageBody += `🚴 *RIDER PERFORMANCE*\n`;
-        const riderStats = {};
-        const zoneStats = {};
+    if (reportType === 'recap') {
+      // 2a. Weekly Recap Logic
+      const today = new Date();
+      const lastWeek = new Date();
+      lastWeek.setDate(today.getDate() - 7);
+      const lastWeekStr = new Intl.DateTimeFormat('en-CA', options).format(lastWeek);
 
-        ridersSnapshot.forEach(doc => {
+      const weeklySnapshot = await db.collection('daily_records')
+        .where('date', '>=', lastWeekStr)
+        .where('date', '<=', istDate)
+        .get();
+
+      if (weeklySnapshot.empty) {
+        messageBody += `⚠️ *No operational records found for the past week.*`;
+      } else {
+        let totalReceived = 0;
+        let totalDelivered = 0;
+        let successRates = [];
+        const riderAggregates = {};
+
+        weeklySnapshot.docs.forEach(doc => {
           const data = doc.data();
-          const name = data.riderName || 'Unknown';
-          const zone = data.zone || 'Unknown';
-          const assigned = (Number(data.assignedDelivery) || 0) + (Number(data.assignedPickup) || 0);
-          const completed = (Number(data.completedDelivery) || 0) + (Number(data.completedPickup) || 0);
+          totalReceived += (Number(data.receivedDelivery) || 0) + (Number(data.receivedPickup) || 0);
+          totalDelivered += Number(data.totalCompleted) || 0;
+          if (data.successRate) successRates.push(Number(data.successRate));
 
-          // Rider Aggregation
-          if (!riderStats[name]) riderStats[name] = { assigned: 0, completed: 0 };
-          riderStats[name].assigned += assigned;
-          riderStats[name].completed += completed;
-
-          // Zone Aggregation (CNR Analysis)
-          if (!zoneStats[zone]) zoneStats[zone] = { assigned: 0, pending: 0 };
-          zoneStats[zone].assigned += assigned;
-          zoneStats[zone].pending += (assigned - completed);
+          (data.riders || []).forEach(r => {
+            if (!riderAggregates[r.riderName]) {
+              riderAggregates[r.riderName] = { completed: 0, assigned: 0 };
+            }
+            riderAggregates[r.riderName].completed += (Number(r.completedDelivery) || 0) + (Number(r.completedPickup) || 0);
+            riderAggregates[r.riderName].assigned += (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0);
+          });
         });
 
-        // Format Rider List
-        Object.entries(riderStats).forEach(([name, stats]) => {
-          const rate = stats.assigned > 0 ? Math.round((stats.completed / stats.assigned) * 100) : 0;
-          const emoji = rate >= 90 ? '⭐' : rate >= 70 ? '✅' : '🔴';
-          messageBody += `${emoji} ${name}: ${stats.completed}/${stats.assigned} (${rate}%)\n`;
-        });
-        messageBody += `\n`;
+        const avgSuccessRate = successRates.length > 0 ? Math.round(successRates.reduce((a, b) => a + b, 0) / successRates.length) : 0;
 
-        // III. CNR ANALYSIS (Zone)
-        messageBody += `📍 *ZONE ANALYSIS (CNR)*\n`;
-        const highCnrZone = Object.entries(zoneStats)
-          .map(([zone, stats]) => ({
-            zone,
-            rate: stats.assigned > 0 ? Math.round((stats.pending / stats.assigned) * 100) : 0
+        messageBody += `📈 *WEEKLY STATS*\n`;
+        messageBody += `📦 Total Volume: ${totalReceived}\n`;
+        messageBody += `✅ Total Delivered: ${totalDelivered}\n`;
+        messageBody += `🎯 Avg Success: ${avgSuccessRate}%\n\n`;
+
+        const topPerformers = Object.entries(riderAggregates)
+          .map(([name, stats]) => ({
+            name,
+            rate: stats.assigned > 0 ? Math.round((stats.completed / stats.assigned) * 100) : 0
           }))
-          .sort((a, b) => b.rate - a.rate)[0];
+          .sort((a, b) => b.rate - a.rate)
+          .slice(0, 3);
 
-        if (highCnrZone && highCnrZone.rate > 0) {
-          messageBody += `🚩 High CNR Zone: *${highCnrZone.zone}* (${highCnrZone.rate}% Pending)\n`;
+        messageBody += `🌟 *STAR PERFORMERS*\n`;
+        topPerformers.forEach((p, i) => {
+          messageBody += `${i === 0 ? '👑' : i === 1 ? '⭐' : '✨'} ${p.name}: ${p.rate}%\n`;
+        });
+      }
+    } else {
+      // 2b. Daily or Pending Logic
+      const summarySnapshot = await db.collection('daily_records').where('date', '==', istDate).get();
+      
+      if (summarySnapshot.empty) {
+        messageBody += `⚠️ *No operational records found for today.*`;
+      } else {
+        const record = summarySnapshot.docs[0].data();
+        const riders = record.riders || [];
+        
+        if (reportType === 'pending') {
+          const pending = Number(record.totalPending) || 0;
+          messageBody += `⚠️ *Action Required: ${pending} items pending at hub.*\n\n`;
+          
+          const ridersWithPending = riders.filter(r => (Number(r.assignedDelivery) || 0) - (Number(r.completedDelivery) || 0) > 0);
+          if (ridersWithPending.length > 0) {
+            messageBody += `⏳ *Pending by Rider:*\n`;
+            ridersWithPending.forEach(r => {
+              const p = (Number(r.assignedDelivery) || 0) - (Number(r.completedDelivery) || 0);
+              messageBody += `• ${r.riderName}: ${p} items\n`;
+            });
+          }
         } else {
-          messageBody += `✅ All zones performing efficiently.\n`;
+          // ORIGINAL DAILY LOGIC (10 PM)
+          const received = (Number(record.receivedDelivery) || 0) + (Number(record.receivedPickup) || 0);
+          const delivered = Number(record.totalCompleted) || 0;
+          const pending = Number(record.totalPending) || 0;
+          const successRate = record.successRate || 0;
+
+          messageBody += `📊 *OVERALL SUMMARY*\n`;
+          messageBody += `📦 Received: ${received}\n`;
+          messageBody += `✅ Delivered: ${delivered}\n`;
+          messageBody += `⏳ Pending: ${pending}\n`;
+          messageBody += `🎯 Overall Success: ${successRate}%\n\n`;
+
+          if (riders.length > 0) {
+            const sortedRiders = [...riders].sort((a, b) => (Number(b.successRate) || 0) - (Number(a.successRate) || 0));
+            const topPerformers = sortedRiders.filter(r => (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0) > 0).slice(0, 3);
+            
+            if (topPerformers.length > 0) {
+              messageBody += `⭐ *TOP PERFORMANCE*\n`;
+              topPerformers.forEach((r, i) => {
+                messageBody += `${i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉'} ${r.riderName}: ${r.successRate}%\n`;
+              });
+              messageBody += `\n`;
+            }
+
+            let alerts = '';
+            const highPerformance = riders.filter(r => r.successRate >= 80 && r.successRate <= 100);
+            const lowPerformance = riders.filter(r => r.successRate >= 70 && r.successRate < 80);
+            const criticalPerformance = riders.filter(r => r.successRate < 70 && ((Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0) > 0));
+
+            if (highPerformance.length > 0 || lowPerformance.length > 0 || criticalPerformance.length > 0) {
+              messageBody += `🔔 *PERFORMANCE ALERTS*\n`;
+              if (highPerformance.length > 0) {
+                messageBody += `🔥 *High (80-100%):*\n`;
+                highPerformance.forEach(r => messageBody += `• ${r.riderName} (${r.successRate}%)\n`);
+              }
+              if (lowPerformance.length > 0) {
+                messageBody += `⚠️ *Needs Attention (70-80%):*\n`;
+                lowPerformance.forEach(r => messageBody += `• ${r.riderName} (${r.successRate}%)\n`);
+              }
+              if (criticalPerformance.length > 0) {
+                messageBody += `🚨 *Low (<70%):*\n`;
+                criticalPerformance.forEach(r => messageBody += `• ${r.riderName} (${r.successRate}%)\n`);
+              }
+              messageBody += `\n`;
+            }
+          }
         }
       }
     }
 
-    messageBody += `\n_Generated automatically at 10:00 PM IST_`;
+    messageBody += `_Generated: ${new Date().toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit' })} IST_`;
 
     const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
     const phoneNumbers = process.env.WHATSAPP_TO_NUMBER.split(',');
+    const results = [];
 
     for (const number of phoneNumbers) {
-      await client.messages.create({
-        body: messageBody,
-        from: `whatsapp:${process.env.WHATSAPP_FROM_NUMBER.trim()}`,
-        to: `whatsapp:${number.trim()}`
-      });
+      const targetNumber = number.trim();
+      if (!targetNumber) continue;
+
+      try {
+        const response = await client.messages.create({
+          body: messageBody,
+          from: `whatsapp:${process.env.WHATSAPP_FROM_NUMBER.trim()}`,
+          to: `whatsapp:${targetNumber}`
+        });
+        
+        console.log(`✅ WhatsApp report sent to ${targetNumber}. SID: ${response.sid}`);
+        results.push({ number: targetNumber, status: 'sent', sid: response.sid });
+      } catch (err) {
+        console.error(`❌ Failed to send WhatsApp to ${targetNumber}:`, err.message);
+        results.push({ number: targetNumber, status: 'failed', error: err.message });
+      }
     }
 
-    res.status(200).json({ success: true, message: 'Enhanced daily report sent.' });
+    return res.status(200).json({ 
+      success: true, 
+      message: 'Daily report processing complete.',
+      timestamp: new Date().toISOString(),
+      results 
+    });
 
   } catch (error) {
     console.error("Daily report error:", error);

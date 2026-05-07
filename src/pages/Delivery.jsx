@@ -8,6 +8,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../hooks/useToast';
 import { deliveryService } from '../services/deliveryService';
 import { riderService } from '../services/riderService';
+import { clientService } from '../services/clientService';
+import { Briefcase, Building } from 'lucide-react';
 
 export default function Delivery() {
   const toast = useToast();
@@ -16,6 +18,7 @@ export default function Delivery() {
   const [activeDate, setActiveDate] = useState(new Date().toISOString().split('T')[0]);
   
   const [riders, setRiders] = useState([]);
+  const [clients, setClients] = useState([]);
   const [allRecords, setAllRecords] = useState([]);
   
   // Local state for the daily summary inputs
@@ -34,6 +37,8 @@ export default function Delivery() {
   const [riderForm, setRiderForm] = useState({
     riderId: '',
     riderName: '',
+    clientId: '',
+    clientName: '',
     zone: '',
     assignedDelivery: 0,
     assignedPickup: 0,
@@ -48,10 +53,12 @@ export default function Delivery() {
 
   useEffect(() => {
     const unsubRiders = riderService.subscribeToRiders(setRiders);
+    const unsubClients = clientService.subscribeToClients(setClients);
     const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
 
     return () => {
       unsubRiders();
+      unsubClients();
       unsubRecords();
     };
   }, []);
@@ -189,6 +196,8 @@ export default function Delivery() {
     
     const riderEntry = {
       ...riderForm,
+      clientId: riderForm.clientId || (clients.length > 0 ? clients[0].id : ''),
+      clientName: riderForm.clientName || (clients.length > 0 ? clients[0].name : 'Default'),
       assignedDelivery: assignedDel,
       assignedPickup: assignedPick,
       completedDelivery: compDel,
@@ -285,6 +294,8 @@ export default function Delivery() {
     setRiderForm({
       riderId: '',
       riderName: '',
+      clientId: '',
+      clientName: '',
       zone: '',
       assignedDelivery: 0,
       assignedPickup: 0,
@@ -432,6 +443,7 @@ export default function Delivery() {
                   <thead>
                     <tr className="border-b border-gray-100 dark:border-gray-800 text-left text-[11px] uppercase tracking-widest font-bold text-gray-400 dark:text-gray-500">
                       <th className="px-5 py-4">Rider</th>
+                      <th className="px-5 py-4">Client</th>
                       <th className="px-5 py-4">Zone</th>
                       <th className="px-5 py-4 text-center">Assigned (D/P)</th>
                       <th className="px-5 py-4 text-center">Completed (D/P)</th>
@@ -443,7 +455,7 @@ export default function Delivery() {
                   </thead>
                   <tbody className="divide-y divide-gray-50 dark:divide-gray-800/50">
                     {currentRiders.length === 0 ? (
-                       <tr><td colSpan="6" className="py-12 text-center text-gray-400 font-medium">No riders assigned for this date.</td></tr>
+                       <tr><td colSpan="9" className="py-12 text-center text-gray-400 font-medium">No riders assigned for this date.</td></tr>
                     ) : currentRiders.map((r, i) => {
                       const tAssigned = Number(r.assignedDelivery) + Number(r.assignedPickup);
                       const tCompleted = Number(r.completedDelivery) + Number(r.completedPickup);
@@ -464,6 +476,11 @@ export default function Delivery() {
                                 </span>
                               )}
                             </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 text-[10px] font-black px-2 py-1 rounded uppercase tracking-wider">
+                              {r.clientName}
+                            </span>
                           </td>
                           <td className="px-5 py-4 font-bold text-slate-500 dark:text-slate-400 text-xs">
                             <span className="bg-slate-100 dark:bg-slate-800 px-2 py-1 rounded-md">{r.zone || 'None'}</span>
@@ -581,7 +598,9 @@ export default function Delivery() {
               <form onSubmit={handleRiderSubmit} className="p-6 space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase text-gray-500">ID / Assigned Rider</label>
+                    <label className="text-xs font-bold uppercase text-gray-500 flex items-center gap-1">
+                      <User size={12} className="text-primary"/> Rider
+                    </label>
                     <select 
                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
                        required
@@ -596,7 +615,29 @@ export default function Delivery() {
                     </select>
                   </div>
                   <div className="space-y-1.5">
-                    <label className="text-xs font-bold uppercase text-gray-500">Zone</label>
+                    <label className="text-xs font-bold uppercase text-gray-500 flex items-center gap-1">
+                      <Building size={12} className="text-primary"/> Client
+                    </label>
+                    <select 
+                       className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
+                       required
+                       value={riderForm.clientId}
+                       onChange={(e) => {
+                         const sel = clients.find(c => c.id === e.target.value);
+                         setRiderForm({...riderForm, clientId: e.target.value, clientName: sel?.name || ''});
+                       }}
+                    >
+                      <option value="">-- Choose Client --</option>
+                      {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <label className="text-xs font-bold uppercase text-gray-500 flex items-center gap-1">
+                      <MapPin size={12} className="text-primary"/> Zone
+                    </label>
                     <select 
                        className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 outline-none font-bold"
                        required

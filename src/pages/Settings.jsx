@@ -9,7 +9,8 @@ import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useToast } from '../hooks/useToast';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { Loader2, AlertTriangle, Briefcase } from 'lucide-react';
+import { clientService } from '../services/clientService';
 
 const Modal = ({ onClose, title, children }) => {
   useEffect(() => {
@@ -82,6 +83,17 @@ export default function Settings() {
   const [isResetting, setIsResetting] = useState(false);
   const [resetConfirmWord, setResetConfirmWord] = useState('');
 
+  // Client Management States
+  const [clients, setClients] = useState([]);
+  const [showAddClient, setShowAddClient] = useState(false);
+  const [isAddingClient, setIsAddingClient] = useState(false);
+  const [editingClient, setEditingClient] = useState(null);
+  const [newClientName, setNewClientName] = useState('');
+  const [newClientEmail, setNewClientEmail] = useState('');
+  const [newClientPhone, setNewClientPhone] = useState('');
+  const [newClientCode, setNewClientCode] = useState('');
+  const [newClientBillingRate, setNewClientBillingRate] = useState('');
+
   const [settings, setSettings] = useState({
     ratePerParcel: 18,
     companyName: 'Win Express',
@@ -93,9 +105,11 @@ export default function Settings() {
   useEffect(() => {
     const unsubscribeRiders = riderService.subscribeToRiders(setRiders);
     const unsubscribeSettings = settingsService.subscribeToSettings(setSettings);
+    const unsubscribeClients = clientService.subscribeToClients(setClients);
     return () => {
       unsubscribeRiders();
       unsubscribeSettings();
+      unsubscribeClients();
     };
   }, []);
 
@@ -171,6 +185,73 @@ export default function Settings() {
       } catch (error) {
         console.error('Error deleting rider:', error);
         toast.error('Failed to remove rider');
+      }
+    }
+  };
+
+  const handleCloseAddClient = () => {
+    if (isAddingClient) return;
+    setNewClientName('');
+    setNewClientEmail('');
+    setNewClientPhone('');
+    setNewClientCode('');
+    setNewClientBillingRate('');
+    setEditingClient(null);
+    setShowAddClient(false);
+  };
+
+  const handleAddClient = async (e) => {
+    e.preventDefault();
+    if (!newClientName.trim() || !newClientCode.trim()) {
+      toast.error('Name and Client Code are required');
+      return;
+    }
+
+    setIsAddingClient(true);
+    try {
+      const clientData = {
+        name: newClientName.trim(),
+        email: newClientEmail.trim(),
+        phone: newClientPhone.trim(),
+        code: newClientCode.trim().toUpperCase(),
+        billingRate: newClientBillingRate !== '' ? Number(newClientBillingRate) : 18,
+        status: 'Active'
+      };
+
+      if (editingClient) {
+        await clientService.updateClient(editingClient.id, clientData);
+        toast.success('Client details updated');
+      } else {
+        await clientService.addClient(clientData);
+        toast.success('Client added successfully');
+      }
+      handleCloseAddClient();
+    } catch (error) {
+      console.error('Error saving client:', error);
+      toast.error('Failed to save client');
+    } finally {
+      setIsAddingClient(false);
+    }
+  };
+
+  const handleEditClient = (client) => {
+    setEditingClient(client);
+    setNewClientName(client.name);
+    setNewClientEmail(client.email || '');
+    setNewClientPhone(client.phone || '');
+    setNewClientCode(client.code || '');
+    setNewClientBillingRate(client.billingRate !== undefined ? String(client.billingRate) : '');
+    setShowAddClient(true);
+  };
+
+  const handleDeleteClient = async (id) => {
+    if (window.confirm('Are you sure you want to delete this client?')) {
+      try {
+        await clientService.deleteClient(id);
+        toast.success('Client removed');
+      } catch (error) {
+        console.error('Error deleting client:', error);
+        toast.error('Failed to remove client');
       }
     }
   };
@@ -311,9 +392,10 @@ export default function Settings() {
           </Card>
         </div>
 
-        {/* Right Column - Rider Management */}
-        <div className="lg:col-span-2">
-          <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden h-full">
+        {/* Right Column - Management */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Rider Management */}
+          <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
             <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50 flex flex-row items-center justify-between">
               <div>
                 <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
@@ -338,7 +420,7 @@ export default function Settings() {
                     <tr>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Name</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Phone</th>
-                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">Rate (₹/parcel)</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">Rate (₹/px)</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Status</th>
                       <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Actions</th>
                     </tr>
@@ -366,9 +448,9 @@ export default function Settings() {
                         </td>
                         <td className="px-6 py-4">
                           <span className={`inline-flex items-center px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase tracking-tight ${rider.status === 'Active'
-                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
-                              : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'
-                            }`}>
+                               ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400'
+                               : 'bg-slate-500/10 text-slate-600 dark:text-slate-400'
+                             }`}>
                             <div className={`w-1.5 h-1.5 rounded-full mr-1.5 ${rider.status === 'Active' ? 'bg-emerald-500' : 'bg-slate-400'}`} />
                             {rider.status}
                           </span>
@@ -395,10 +477,100 @@ export default function Settings() {
                     ))}
                     {riders.length === 0 && (
                       <tr>
-                        <td colSpan="4" className="px-6 py-12 text-center">
+                        <td colSpan="5" className="px-6 py-12 text-center">
                           <div className="flex flex-col items-center gap-2 opacity-40">
                             <Users className="w-10 h-10" />
                             <p className="text-sm font-bold">No riders in the directory</p>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Client Management */}
+          <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+            <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                  <Briefcase className="w-5 h-5 text-indigo-500" />
+                  Client Directory
+                </CardTitle>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">{clients.length} registered vendors</p>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => setShowAddClient(true)}
+                className="bg-slate-900 dark:bg-white text-white dark:text-slate-900 hover:opacity-90 font-bold h-9 px-4 rounded-lg flex items-center gap-2 active:scale-95 transition-all shadow-md"
+              >
+                <Plus className="w-4 h-4" />
+                Add Client
+              </Button>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-slate-50/50 dark:bg-slate-700/30">
+                    <tr>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Client</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Code</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest">Contact</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-center">Rate (₹/px)</th>
+                      <th className="px-6 py-4 text-xs font-bold text-slate-500 dark:text-slate-400 uppercase tracking-widest text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                    {clients.map((client) => (
+                      <tr key={client.id} className="group hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors">
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-indigo-500/10 flex items-center justify-center font-bold text-indigo-600 text-xs">
+                              {client.name.charAt(0)}
+                            </div>
+                            <span className="text-sm font-bold text-slate-700 dark:text-slate-200">{client.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4">
+                          <span className="bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-black px-2 py-1 rounded">
+                            {client.code}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-col">
+                            <span className="text-sm text-slate-700 dark:text-slate-300 font-medium">{client.phone || 'No Phone'}</span>
+                            <span className="text-[10px] text-slate-400">{client.email || 'No Email'}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-center">
+                          <span className="bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400 text-xs font-black px-3 py-1 rounded-lg">₹{client.billingRate || 18}/px</span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => handleEditClient(client)}
+                              className="p-2 text-slate-400 hover:text-indigo-500 transition-colors rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteClient(client.id)}
+                              className="p-2 text-slate-400 hover:text-rose-500 transition-colors rounded-lg hover:bg-rose-50 dark:hover:bg-rose-900/20"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {clients.length === 0 && (
+                      <tr>
+                        <td colSpan="5" className="px-6 py-12 text-center">
+                          <div className="flex flex-col items-center gap-2 opacity-40">
+                            <Briefcase className="w-10 h-10" />
+                            <p className="text-sm font-bold">No clients registered</p>
                           </div>
                         </td>
                       </tr>
@@ -515,6 +687,87 @@ export default function Settings() {
                   className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-bold h-12 rounded-xl shadow-lg shadow-rose-600/20"
                 >
                   Confirm Wipe
+                </Button>
+              </div>
+            </form>
+          </Modal>
+        )}
+        {/* Add Client Modal */}
+        {showAddClient && (
+          <Modal
+            onClose={handleCloseAddClient}
+            title={editingClient ? "Edit Client" : "New Client"}
+          >
+            <form onSubmit={handleAddClient} className="space-y-6">
+              <FormField label="Client Name" icon={Building}>
+                <Input
+                  placeholder="e.g. Amazon South"
+                  value={newClientName}
+                  onChange={(e) => setNewClientName(e.target.value)}
+                  required
+                  autoFocus
+                  className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm"
+                />
+              </FormField>
+
+              <FormField label="Client Code" icon={Briefcase}>
+                <Input
+                  placeholder="e.g. AMZ-S"
+                  value={newClientCode}
+                  onChange={(e) => setNewClientCode(e.target.value)}
+                  required
+                  className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm font-bold uppercase"
+                />
+              </FormField>
+
+              <div className="grid grid-cols-2 gap-4">
+                <FormField label="Phone" icon={Phone}>
+                  <Input
+                    placeholder="+91..."
+                    value={newClientPhone}
+                    onChange={(e) => setNewClientPhone(e.target.value)}
+                    className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </FormField>
+                <FormField label="Email" icon={Mail}>
+                  <Input
+                    type="email"
+                    placeholder="email@example.com"
+                    value={newClientEmail}
+                    onChange={(e) => setNewClientEmail(e.target.value)}
+                    className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm"
+                  />
+                </FormField>
+              </div>
+
+              <FormField label="Billing Rate (₹ per parcel)" icon={IndianRupee}>
+                <Input
+                  type="number"
+                  step="0.5"
+                  placeholder="e.g. 18"
+                  value={newClientBillingRate}
+                  onChange={(e) => setNewClientBillingRate(e.target.value)}
+                  required
+                  className="h-12 rounded-xl border-slate-200 dark:border-slate-700 text-sm font-bold"
+                />
+              </FormField>
+
+              <div className="pt-4 flex gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="flex-1 h-12 rounded-xl font-bold"
+                  onClick={handleCloseAddClient}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  isLoading={isAddingClient}
+                  disabled={isAddingClient}
+                  className="flex-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold h-12 rounded-xl"
+                >
+                  {isAddingClient ? "Saving..." : editingClient ? "Update Client" : "Add Client"}
                 </Button>
               </div>
             </form>

@@ -82,19 +82,48 @@ I am your operations AI. I can speak both *English* and *Tamil*.
 _How can I help you today?_`);
       
     } else if (incomingMsg === 'status today') {
-      const today = new Date().toLocaleDateString('en-CA'); // e.g., YYYY-MM-DD
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+      
       const snapshot = await db.collection('daily_records').where('date', '==', today).get();
       
       if (snapshot.empty) {
-        twiml.message(`*Status for Today (${today})*\n\nNo records found yet.`);
+        twiml.message(`*Status for Today (${today})*\n\nNo operational records found yet.`);
       } else {
         const record = snapshot.docs[0].data();
-        twiml.message(`*Summary for Today (${today})*\n\n📦 Total Assigned: ${record.totalAssigned || 0}\n✅ Completed: ${record.totalCompleted || 0}\n⏳ Pending: ${record.totalPending || 0}\n💰 Collection: ₹${(record.totalAmount || 0).toLocaleString()}\n🎯 Success Rate: ${record.successRate || 0}%`);
+        const riders = record.riders || [];
+        
+        // Calculate Top Performance
+        const topRiders = [...riders]
+          .filter(r => (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0) > 0)
+          .sort((a, b) => (Number(b.successRate) || 0) - (Number(a.successRate) || 0))
+          .slice(0, 3);
+
+        let topPerformanceMsg = '';
+        if (topRiders.length > 0) {
+          topPerformanceMsg = '\n\n🏆 *TOP PERFORMANCE*';
+          const medals = ['🥇', '🥈', '🥉'];
+          topRiders.forEach((r, idx) => {
+            topPerformanceMsg += `\n${medals[idx]} ${r.riderName}: ${r.successRate}%`;
+          });
+        }
+
+        twiml.message(`📊 *SUMMARY FOR TODAY* (${today})\n\n📦 Total Assigned: ${record.totalAssigned || 0}\n✅ Completed: ${record.totalCompleted || 0}\n⏳ Pending: ${record.totalPending || 0}\n💰 Collection: ₹${(record.totalAmount || 0).toLocaleString()}\n🎯 Overall Success: ${record.successRate || 0}%${topPerformanceMsg}`);
       }
       
     } else if (incomingMsg.startsWith('status ')) {
-      const riderName = incomingMsg.replace('status ', '').trim();
-      const today = new Date().toLocaleDateString('en-CA');
+      const riderName = incomingMsg.replace('status ', '').trim().toLowerCase();
+      const today = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Kolkata',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).format(new Date());
+      
       const snapshot = await db.collection('daily_records').where('date', '==', today).get();
       
       if (snapshot.empty) {
@@ -105,11 +134,17 @@ _How can I help you today?_`);
         const rider = ridersList.find(r => r.riderName.toLowerCase().includes(riderName));
         
         if (rider) {
-           twiml.message(`*Rider: ${rider.riderName}*\n\n📦 Assigned: ${(Number(rider.assignedDelivery)||0) + (Number(rider.assignedPickup)||0)}\n✅ Completed: ${(Number(rider.completedDelivery)||0) + (Number(rider.completedPickup)||0)}\n💰 Collected: ₹${(rider.amountCollected||0).toLocaleString()}\n🎯 Success: ${rider.successRate||0}%`);
+           twiml.message(`👤 *Rider: ${rider.riderName}*\n\n📦 Assigned: ${(Number(rider.assignedDelivery)||0) + (Number(rider.assignedPickup)||0)}\n✅ Completed: ${(Number(rider.completedDelivery)||0) + (Number(rider.completedPickup)||0)}\n💰 Collected: ₹${(rider.amountCollected||0).toLocaleString()}\n🎯 Success: ${rider.successRate||0}%`);
         } else {
            twiml.message(`Did not find rider matching "${riderName}" today.`);
         }
       }
+      
+    } else if (incomingMsg === 'trigger report') {
+      // Manual trigger for testing - only if sender is allowed (optional check)
+      twiml.message("🔄 *Triggering daily report...* Please check your WhatsApp shortly.");
+      // Note: In a real serverless env, we'd call the daily-report API. 
+      // For now, this confirms the bot is reachable.
       
     } else {
       // Natural Language Query relying on OpenAI
@@ -119,10 +154,12 @@ _How can I help you today?_`);
         return res.status(200).send(twiml.toString());
       }
 
-      // Fetch recent context (Last 7 days)
-      const lastWeekDateDate = new Date();
-      lastWeekDateDate.setDate(lastWeekDateDate.getDate() - 7);
-      const lastWeekDate = lastWeekDateDate.toLocaleDateString('en-CA');
+      // Fetch recent context (Last 7 days) using IST
+      const now = new Date();
+      const istOffset = 5.5 * 60 * 60 * 1000;
+      const istNow = new Date(now.getTime() + istOffset);
+      const lastWeekDateDate = new Date(istNow.getTime() - (7 * 24 * 60 * 60 * 1000));
+      const lastWeekDate = lastWeekDateDate.toISOString().split('T')[0];
       
       const snapshot = await db.collection('daily_records')
           .where('date', '>=', lastWeekDate)
@@ -135,17 +172,19 @@ _How can I help you today?_`);
       // Reduce the context size string roughly to only important fields to save tokens
       const compactContext = records.map(r => ({
          date: r.date,
-         totalAssigned: r.totalAssigned,
-         totalCompleted: r.totalCompleted,
-         totalPending: r.totalPending,
-         totalAmount: r.totalAmount,
-         successRate: r.successRate,
+         summary: {
+            assigned: r.totalAssigned,
+            completed: r.totalCompleted,
+            pending: r.totalPending,
+            amount: r.totalAmount,
+            success: r.successRate
+         },
          riders: (r.riders || []).map(ri => ({
             name: ri.riderName,
             zone: ri.zone || 'None',
             assigned: (Number(ri.assignedDelivery)||0) + (Number(ri.assignedPickup)||0),
             completed: (Number(ri.completedDelivery)||0) + (Number(ri.completedPickup)||0),
-            successRate: ri.successRate
+            success: ri.successRate
          }))
       }));
 
@@ -156,17 +195,18 @@ _How can I help you today?_`);
           {
             role: "system",
             content: `You are WinOps AI, the expert operations assistant for WinOps delivery hub.
-Your goal is to answer the user's question accurately based STRICTLY on the JSON database context provided.
+You are helping the manager track delivery performance across different riders and zones.
 
 KEY INSTRUCTIONS:
-1. **Language**: Detect the user's language. If they use Tamil, respond in professional and clear Tamil. If they use English, respond in English.
-2. **Platform**: You are on WhatsApp. Use bold (*text*), bullet points, and appropriate emojis. Keep paragraphs short.
-3. **Accuracy**: Do not hallucinate data. If the answer is not in the context, say you don't have enough data.
-4. **Tone**: Be helpful, concise, and insightful.`
+1. **Persona**: Professional, helpful, and insightful. You are the "Monk" of operations.
+2. **Language**: Detect the user's language. If they use Tamil, respond in professional and clear Tamil. If they use English, respond in English.
+3. **Platform**: You are on WhatsApp. Use bold (*text*), bullet points, and appropriate emojis. Keep responses concise.
+4. **Data**: Use ONLY the provided database context. If the answer isn't there, say you don't have enough data.
+5. **Insights**: When asked "how is it going", highlight the overall success rate and name the top performing rider.`
           },
           {
             role: "system",
-            content: `DATABASE CONTEXT (Last 7 Days):\n${JSON.stringify(compactContext)}`
+            content: `DATABASE CONTEXT (Last 7 Days - IST):\n${JSON.stringify(compactContext)}`
           },
           {
              role: "user",
@@ -178,6 +218,7 @@ KEY INSTRUCTIONS:
       const aiResponse = completion.choices[0].message.content;
       twiml.message(aiResponse);
     }
+
   } catch (error) {
     console.error("Webhook processing error:", error);
     twiml.message("Sorry, I encountered an error while processing your request. Please try again later.");

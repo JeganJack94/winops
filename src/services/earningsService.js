@@ -60,5 +60,9 @@ export const earningsService = {
 
   deletePayout: async (id) => {
     await deleteDoc(doc(db, PAYOUTS_COLLECTION, id));
+  },
+
+  updatePayout: async (id, data) => {
+    await updateDoc(doc(db, PAYOUTS_COLLECTION, id), data);
   }
 };
