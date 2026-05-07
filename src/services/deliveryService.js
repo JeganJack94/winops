@@ -108,7 +108,7 @@ export const deliveryService = {
     return await deleteDoc(doc(db, DAILY_RECORDS_COLLECTION, id));
   },
 
-  subscribeToDailyRecords: (callback, limitCount = 30) => {
+  subscribeToDailyRecords: (callback, limitCount = 180) => {
     const q = query(
       collection(db, DAILY_RECORDS_COLLECTION),
       orderBy('date', 'desc'),

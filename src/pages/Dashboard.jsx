@@ -190,24 +190,22 @@ export default function Dashboard() {
         gradient: 'linear-gradient(135deg, #1d4ed8 0%, #3b82f6 100%)',
       },
       {
-        title: 'Today Delivered',
+        title: 'Actually Delivered By',
         value: delivered.toString(),
         icon: CheckCircle2,
         gradient: 'linear-gradient(135deg, #065f46 0%, #10b981 100%)',
-      },
-      {
-        title: 'Net Profit (Est.)',
-        value: `₹${netProfit.toLocaleString('en-IN')}`,
-        icon: TrendingUp,
-        gradient: netProfit >= 0 
-          ? 'linear-gradient(135deg, #059669 0%, #10b981 100%)' 
-          : 'linear-gradient(135deg, #9f1239 0%, #f43f5e 100%)',
       },
       {
         title: 'Monthly Spending',
         value: `₹${totalOutflow.toLocaleString('en-IN')}`,
         icon: IndianRupee,
         gradient: 'linear-gradient(135deg, #4b5563 0%, #1f2937 100%)',
+      },
+      {
+        title: 'Total Pending',
+        value: pending.toString(),
+        icon: Clock,
+        gradient: 'linear-gradient(135deg, #9f1239 0%, #f43f5e 100%)',
       },
     ];
   }, [allRecords, expenses, payouts, today, currentMonth]);
@@ -248,7 +246,7 @@ export default function Dashboard() {
       labels: labels.length > 0 ? labels : ['No Activity'],
       datasets: [
         {
-          label: 'Delivered',
+          label: 'Actually Delivered By',
           data: delivered.length > 0 ? delivered : [0],
           backgroundColor: 'rgba(16, 185, 129, 0.85)',
           borderRadius: 6,
@@ -315,10 +313,10 @@ export default function Dashboard() {
           delay={0.05}
         />
         <SummaryCard
-          title="Revenue (Est. Month)"
-          subtitle={`Based on ₹35/parcel for ${new Date().toLocaleDateString('en-US', { month: 'long' })}`}
-          value={`₹${(monthlyDelivered * 35).toLocaleString('en-IN')}`}
-          icon={IndianRupee}
+          title="Monthly Delivery"
+          subtitle={`Total volume for ${new Date().toLocaleDateString('en-US', { month: 'long' })}`}
+          value={summaryStats.monthlyDelivered.toLocaleString('en-IN')}
+          icon={CalendarDays}
           accent="#0ea5e9"
           delay={0.1}
         />

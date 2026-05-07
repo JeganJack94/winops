@@ -107,6 +107,20 @@ export default function Reports() {
         startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
         endDate = new Date(now.getFullYear(), now.getMonth(), 0);
         break;
+      case 'Current Fortnight':
+        startDate = new Date(today.getFullYear(), today.getMonth(), today.getDate() <= 15 ? 1 : 16);
+        break;
+      case 'Last Fortnight':
+        if (today.getDate() <= 15) {
+          // Last fortnight was H2 of previous month
+          startDate = new Date(today.getFullYear(), today.getMonth() - 1, 16);
+          endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+        } else {
+          // Last fortnight was H1 of current month
+          startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+          endDate = new Date(today.getFullYear(), today.getMonth(), 15);
+        }
+        break;
       default:
         startDate = new Date(0); // All time
     }
@@ -185,73 +199,142 @@ export default function Reports() {
 
   const trendData = useMemo(() => {
     const rate = Number(settings.ratePerParcel) || 18;
+    const now = new Date();
+    let lookbackDate = new Date();
     
-    // Grouping helper
+    // Set appropriate lookback based on granularity to ensure enough data points
+    if (trendGranularity === 'daily') {
+      lookbackDate.setDate(now.getDate() - 15); // Show at least 15 days
+    } else if (trendGranularity === 'weekly') {
+      lookbackDate.setDate(now.getDate() - 70); // ~10 weeks
+    } else if (trendGranularity === 'fortnightly') {
+      lookbackDate.setMonth(now.getMonth() - 4); // ~4 months (8 fortnights)
+    } else {
+      lookbackDate.setFullYear(now.getFullYear() - 1); // 1 year
+    }
+    
     const getGroupKey = (dateStr) => {
       const date = new Date(dateStr);
       if (trendGranularity === 'monthly') {
-        return date.toLocaleString('default', { month: 'short', year: '2-digit' });
+        return {
+          key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`,
+          label: date.toLocaleString('default', { month: 'short', year: '2-digit' })
+        };
+      }
+      if (trendGranularity === 'fortnightly') {
+        const isH1 = date.getDate() <= 15;
+        return {
+          key: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${isH1 ? 'H1' : 'H2'}`,
+          label: `${date.toLocaleString('default', { month: 'short' })} ${isH1 ? '1H' : '2H'}`
+        };
       }
       if (trendGranularity === 'weekly') {
-        // Simple week grouping: find the Monday of that week
         const day = date.getDay();
         const diff = date.getDate() - day + (day === 0 ? -6 : 1);
-        const monday = new Date(date.setDate(diff));
-        return monday.toLocaleDateString('default', { day: '2-digit', month: 'short' });
+        const monday = new Date(date.getTime());
+        monday.setDate(diff);
+        return {
+          key: monday.toISOString().split('T')[0],
+          label: monday.toLocaleDateString('default', { day: '2-digit', month: 'short' })
+        };
       }
-      return dateStr.split('-').slice(1).join('/'); // MM/DD
+      // Daily
+      return {
+        key: dateStr,
+        label: dateStr.split('-').slice(1).join('/')
+      };
     };
 
-    const aggregated = filteredData.records.reduce((acc, curr) => {
-      const key = getGroupKey(curr.date);
-      if (!acc[key]) acc[key] = { revenue: 0, expenses: 0 };
-      acc[key].revenue += (Number(curr.totalCompleted) || 0) * rate;
-      return acc;
-    }, {});
+    const aggregated = {};
+    
+    // Filter and aggregate data based on lookback
+    allRecords.forEach(curr => {
+      if (new Date(curr.date) < lookbackDate) return;
+      const { key, label } = getGroupKey(curr.date);
+      if (!aggregated[key]) aggregated[key] = { label, revenue: 0, expenses: 0 };
+      aggregated[key].revenue += (Number(curr.totalCompleted) || 0) * rate;
+    });
 
-    filteredData.expenses.forEach(exp => {
-      const key = getGroupKey(exp.date);
-      if (!aggregated[key]) aggregated[key] = { revenue: 0, expenses: 0 };
+    expenses.forEach(exp => {
+      if (new Date(exp.date) < lookbackDate) return;
+      const { key, label } = getGroupKey(exp.date);
+      if (!aggregated[key]) aggregated[key] = { label, revenue: 0, expenses: 0 };
       aggregated[key].expenses += (Number(exp.amount) || 0);
     });
 
-    filteredData.payouts.forEach(p => {
-      const key = getGroupKey(p.date);
-      if (!aggregated[key]) aggregated[key] = { revenue: 0, expenses: 0 };
+    payouts.forEach(p => {
+      if (new Date(p.date) < lookbackDate) return;
+      const { key, label } = getGroupKey(p.date);
+      if (!aggregated[key]) aggregated[key] = { label, revenue: 0, expenses: 0 };
       aggregated[key].expenses += (Number(p.amount) || 0);
     });
 
-    const labels = Object.keys(aggregated).sort((a, b) => {
-      if (trendGranularity === 'daily') return a.localeCompare(b);
-      return 0; // Maintain insertion order or better sort if needed
-    });
+    const sortedKeys = Object.keys(aggregated).sort();
+    const labels = sortedKeys.map(k => aggregated[k].label);
 
     return {
       labels: labels.length > 0 ? labels : ['No Data'],
       datasets: [
         {
           label: 'Revenue',
-          data: labels.map(l => aggregated[l].revenue),
+          data: sortedKeys.map(k => aggregated[k].revenue),
           borderColor: '#10b981',
           backgroundColor: 'rgba(16, 185, 129, 0.1)',
           fill: true,
           tension: 0.4,
           pointRadius: 4,
           pointBackgroundColor: '#10b981',
+          borderWidth: 3,
         },
         {
           label: 'Expenses',
-          data: labels.map(l => aggregated[l].expenses),
+          data: sortedKeys.map(k => aggregated[k].expenses),
           borderColor: '#f43f5e',
           backgroundColor: 'rgba(244, 63, 94, 0.1)',
           fill: true,
           tension: 0.4,
           pointRadius: 4,
           pointBackgroundColor: '#f43f5e',
+          borderWidth: 3,
         }
       ]
     };
-  }, [filteredData, settings, trendGranularity]);
+  }, [allRecords, expenses, payouts, settings, trendGranularity]);
+
+  const fortnightlyComparisonData = useMemo(() => {
+    const rate = Number(settings.ratePerParcel) || 18;
+    const now = new Date();
+    const lookback = new Date();
+    lookback.setMonth(now.getMonth() - 5); // 5 months
+
+    const aggregated = {};
+    allRecords.forEach(r => {
+      const d = new Date(r.date);
+      if (d < lookback) return;
+      const isH1 = d.getDate() <= 15;
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${isH1 ? 'H1' : 'H2'}`;
+      const label = `${d.toLocaleString('default', { month: 'short' })} ${isH1 ? '1H' : '2H'}`;
+      if (!aggregated[key]) aggregated[key] = { label, delivered: 0 };
+      aggregated[key].delivered += (Number(r.totalCompleted) || 0);
+    });
+
+    const sortedKeys = Object.keys(aggregated).sort().slice(-8); // Last 8 fortnights
+    
+    return {
+      labels: sortedKeys.map(k => aggregated[k].label),
+      datasets: [{
+        label: 'Parcels Delivered',
+        data: sortedKeys.map(k => aggregated[k].delivered),
+        borderColor: '#8b5cf6',
+        backgroundColor: 'rgba(139, 92, 246, 0.1)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 6,
+        pointBackgroundColor: '#8b5cf6',
+        borderWidth: 3,
+      }]
+    };
+  }, [allRecords, settings]);
 
   const settlementList = useMemo(() => {
     const rate = Number(settings.ratePerParcel) || 18;
@@ -284,7 +367,12 @@ export default function Reports() {
       groups[periodKey].amount += (Number(record.totalCompleted) || 0) * rate;
     });
 
-    return Object.values(groups).sort((a, b) => b.key.localeCompare(a.key));
+    return Object.values(groups)
+      .map(group => ({
+        ...group,
+        successRate: group.assigned > 0 ? Math.round((group.delivered / group.assigned) * 100) : 0
+      }))
+      .sort((a, b) => b.key.localeCompare(a.key));
   }, [allRecords, settings]);
 
   const handleUpdateReceived = async (periodKey, amount) => {
@@ -433,6 +521,8 @@ export default function Reports() {
             >
               <option>This Week</option>
               <option>Last Week</option>
+              <option>Current Fortnight</option>
+              <option>Last Fortnight</option>
               <option>This Month</option>
               <option>Last Month</option>
               <option>All Time</option>
@@ -514,8 +604,7 @@ export default function Reports() {
                 </motion.div>
               ))}
             </div>
-
-            {/* Chart Section */}
+            {/* Performance Trends Chart Section */}
             <motion.div variants={itemVariants}>
               <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
                 <CardHeader className="border-b border-slate-50 dark:border-slate-700/50 p-6 flex flex-row items-center justify-between">
@@ -529,7 +618,7 @@ export default function Reports() {
                     </p>
                   </div>
                   <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-700/50 p-1 rounded-xl">
-                    {['daily', 'weekly', 'monthly'].map(g => (
+                    {['daily', 'weekly', 'fortnightly', 'monthly'].map(g => (
                       <button 
                         key={g}
                         onClick={() => setTrendGranularity(g)}
@@ -543,6 +632,7 @@ export default function Reports() {
                 <CardContent className="p-6">
                   <div className="h-[350px] w-full">
                     <Line 
+                      key={`trend-${trendData.labels.join(',')}`}
                       data={trendData}
                       options={{
                         responsive: true,
@@ -584,6 +674,64 @@ export default function Reports() {
                             displayColors: true,
                             usePointStyle: true,
                             boxPadding: 6,
+                          }
+                        }
+                      }}
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+
+            {/* Fortnightly Volume Chart Section */}
+            <motion.div variants={itemVariants}>
+              <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+                <CardHeader className="border-b border-slate-50 dark:border-slate-700/50 p-6 flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                      <Package className="h-5 w-5 text-violet-500" />
+                      Fortnightly Delivery Volume
+                    </CardTitle>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                      Tracking parcel volume for 1st and 2nd half of each month
+                    </p>
+                  </div>
+                </CardHeader>
+                <CardContent className="p-6">
+                  <div className="h-[250px] w-full">
+                    <Line 
+                      key={`fortnightly-${fortnightlyComparisonData.labels.join(',')}`}
+                      data={fortnightlyComparisonData}
+                      options={{
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                          legend: { display: false },
+                          tooltip: {
+                            backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
+                            titleColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                            bodyColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                            borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
+                            borderWidth: 1,
+                            padding: 12,
+                            cornerRadius: 12,
+                          }
+                        },
+                        scales: {
+                          x: { 
+                            grid: { display: false },
+                            ticks: { 
+                              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+                              font: { family: 'Inter', size: 11 }
+                            }
+                          },
+                          y: { 
+                            beginAtZero: true,
+                            grid: { color: theme === 'dark' ? 'rgba(71, 85, 105, 0.1)' : 'rgba(226, 232, 240, 0.8)' },
+                            ticks: { 
+                              color: theme === 'dark' ? '#94a3b8' : '#64748b',
+                              font: { family: 'Inter', size: 11 }
+                            }
                           }
                         }
                       }}
@@ -653,6 +801,7 @@ export default function Reports() {
                       <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Period</th>
                       <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Assigned</th>
                       <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Delivered</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Success %</th>
                       <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Amount (Global Rate: ₹{settings.ratePerParcel})</th>
                       <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Received</th>
                       <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Balance</th>
@@ -668,6 +817,17 @@ export default function Reports() {
                           <td className="px-6 py-5 font-bold text-slate-700 dark:text-slate-200">{item.label}</td>
                           <td className="px-6 py-5 font-bold text-slate-600 dark:text-slate-400">{item.assigned}</td>
                           <td className="px-6 py-5 font-bold text-emerald-600 dark:text-emerald-400">{item.delivered}</td>
+                          <td className="px-6 py-5">
+                            <div className="flex items-center gap-2">
+                              <div className="flex-1 h-2 bg-slate-100 dark:bg-slate-700 rounded-full overflow-hidden min-w-[60px]">
+                                <div 
+                                  className={`h-full rounded-full ${item.successRate >= 80 ? 'bg-emerald-500' : 'bg-rose-500'}`}
+                                  style={{ width: `${item.successRate}%` }}
+                                />
+                              </div>
+                              <span className="text-xs font-bold text-slate-500">{item.successRate}%</span>
+                            </div>
+                          </td>
                           <td className="px-6 py-5 font-bold text-slate-900 dark:text-white">₹{item.amount.toLocaleString()}</td>
                           <td className="px-6 py-5">
                             <div className="relative max-w-[150px]">

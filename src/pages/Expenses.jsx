@@ -34,7 +34,7 @@ ChartJS.register(
 
 const EXPENSE_TYPES = [
   'Fuel', 'Salary', 'Maintenance', 'Utilities', 'Rent', 
-  'Tea & Snacks', 'Recharge', 'Stationery', 'Infrastructure', 'Misc'
+  'Tea & Snacks', 'Food', 'Recharge', 'Stationery', 'Infrastructure', 'Misc'
 ];
 
 const TYPE_CONFIG = {
@@ -44,6 +44,7 @@ const TYPE_CONFIG = {
   Utilities:      { color: '#8b5cf6', bg: 'rgba(139,92,246,0.12)',  text: '#8b5cf6' },
   Rent:           { color: '#ec4899', bg: 'rgba(236,72,153,0.12)',  text: '#ec4899' },
   'Tea & Snacks': { color: '#f59e0b', bg: 'rgba(245,158,11,0.12)',  text: '#f59e0b' },
+  Food:           { color: '#fb923c', bg: 'rgba(251,146,60,0.12)',  text: '#fb923c' },
   Recharge:       { color: '#06b6d4', bg: 'rgba(6,182,212,0.12)',   text: '#06b6d4' },
   Stationery:     { color: '#6366f1', bg: 'rgba(99,102,241,0.12)',  text: '#6366f1' },
   Infrastructure: { color: '#ef4444', bg: 'rgba(239,68,68,0.12)',   text: '#ef4444' },
