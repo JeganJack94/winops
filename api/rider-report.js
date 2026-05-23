@@ -126,11 +126,15 @@ export default async function handler(req, res) {
     const riderConfigs = {};
     ridersSnapshot.forEach(doc => {
       const d = doc.data();
-      const key = d.name.toLowerCase().trim();
-      riderConfigs[key] = {
-        phone: d.phone,
-        whatsappEnabled: d.whatsappEnabled !== false // Default to true if not set
-      };
+      if (d.name && d.phone) {
+        const key = d.name.toLowerCase().trim();
+        // Sanitize phone: remove non-numeric characters except +
+        const sanitizedPhone = String(d.phone).replace(/[^\d+]/g, '');
+        riderConfigs[key] = {
+          phone: sanitizedPhone,
+          whatsappEnabled: d.whatsappEnabled !== false 
+        };
+      }
     });
 
     const twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -208,7 +212,11 @@ _— Win Express Ops Team_`;
       sent: results.filter(r => r.status === 'sent').length,
       skipped: results.filter(r => r.status === 'skipped').length,
       failed: results.filter(r => r.status === 'failed').length,
-      results
+      results,
+      debug: {
+        fromNumber: fromNumber,
+        usingSandbox: fromNumber.includes('14155238886') // Default Twilio Sandbox number
+      }
     });
 
   } catch (error) {
