@@ -240,6 +240,61 @@ export default function Earnings() {
   const monthlyTotalPaid = monthlyEarnings.reduce((s, r) => s + r.totalPaid, 0);
   const monthlyTotalBalance = monthlyEarnings.reduce((s, r) => s + r.balanceDue, 0);
 
+  // ─── ALL-TIME CUMULATIVE BALANCE per rider ───
+  // Iterates ALL daily records (not just selected month) to compute
+  // total salary ever earned minus total payouts ever made.
+  const allTimeBalances = useMemo(() => {
+    const globalRate = Number(globalSettings.ratePerParcel) || 12;
+    const salaryByRider = {};
+    const paidByRider = {};
+
+    riders.forEach(r => {
+      salaryByRider[r.id] = 0;
+      paidByRider[r.id] = 0;
+    });
+
+    // Aggregate salary from every daily record
+    dailyRecords.forEach(record => {
+      const entries = record?.riders || [];
+      riders.forEach(r => {
+        const riderRate = r.ratePerParcel !== undefined ? Number(r.ratePerParcel) : globalRate;
+        const ownEntry = entries.find(dr => dr.riderId === r.id && (!dr.actualRiderId || dr.actualRiderId === r.id));
+        const subEntries = entries.filter(dr => dr.actualRiderId === r.id && dr.riderId !== r.id);
+        const ownDels = ownEntry ? (Number(ownEntry.completedDelivery) || 0) + (Number(ownEntry.completedPickup) || 0) : 0;
+        const subDels = subEntries.reduce((sum, dr) => sum + (Number(dr.completedDelivery) || 0) + (Number(dr.completedPickup) || 0), 0);
+        const tDels = ownDels + subDels;
+
+        let present = tDels > 0;
+        let salary = tDels * riderRate;
+        const ov = overrides.find(o => o.id === `${record.date}_${r.id}`);
+        if (ov) {
+          if (ov.isPresent !== undefined) present = ov.isPresent;
+          if (ov.customSalary !== undefined) salary = Number(ov.customSalary);
+        }
+        if (present) salaryByRider[r.id] += salary;
+      });
+    });
+
+    // Aggregate all payouts
+    payouts.forEach(p => {
+      if (paidByRider[p.riderId] !== undefined) {
+        paidByRider[p.riderId] += Number(p.amount) || 0;
+      }
+    });
+
+    const result = {};
+    riders.forEach(r => {
+      result[r.id] = {
+        totalEarned: salaryByRider[r.id] || 0,
+        totalPaid:   paidByRider[r.id]   || 0,
+        netBalance:  (salaryByRider[r.id] || 0) - (paidByRider[r.id] || 0)
+      };
+    });
+    return result;
+  }, [dailyRecords, riders, overrides, payouts, globalSettings]);
+
+  const allTimeTotalNet = riders.reduce((s, r) => s + (allTimeBalances[r.id]?.netBalance || 0), 0);
+
   // ─── INDIVIDUAL RIDER DATA ───
   const individualData = useMemo(() => {
     if (!selectedRiderId) return null;
@@ -575,10 +630,10 @@ export default function Earnings() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <KPICard title="Total Month Payout" value={`₹${monthlyTotalPayout.toLocaleString()}`} icon={IndianRupee} color="from-emerald-50 to-white dark:from-emerald-900/30" textColor="text-emerald-600" />
-            <KPICard title="Advances Paid"      value={`₹${monthlyTotalPaid.toLocaleString()}`}   icon={CreditCard} color="from-blue-50 to-white dark:from-blue-900/30" textColor="text-blue-600" />
-            <KPICard title="Net Balance Due"    value={`₹${monthlyTotalBalance.toLocaleString()}`} icon={TrendingUp} color="from-amber-50 to-white dark:from-amber-900/30" textColor="text-amber-600" />
-            <KPICard title="Total Rider Days"   value={monthlyEarnings.reduce((s,r) => s + r.totalDays, 0)} icon={Calendar} color="from-indigo-50 to-white dark:from-indigo-900/30" textColor="text-indigo-600" />
+            <KPICard title="This Month Earnings"  value={`₹${monthlyTotalPayout.toLocaleString()}`}  icon={IndianRupee} color="from-emerald-50 to-white dark:from-emerald-900/30" textColor="text-emerald-600" />
+            <KPICard title="This Month Advances"  value={`₹${monthlyTotalPaid.toLocaleString()}`}    icon={CreditCard}  color="from-blue-50 to-white dark:from-blue-900/30"    textColor="text-blue-600" />
+            <KPICard title="Net Payable (All Time)" value={`₹${allTimeTotalNet.toLocaleString()}`}   icon={TrendingUp}  color="from-rose-50 to-white dark:from-rose-900/30"    textColor="text-rose-600" />
+            <KPICard title="Total Rider Days"      value={monthlyEarnings.reduce((s,r) => s + r.totalDays, 0)} icon={Calendar} color="from-indigo-50 to-white dark:from-indigo-900/30" textColor="text-indigo-600" />
           </div>
 
           <div className="bg-white dark:bg-gray-900/40 rounded-3xl border border-gray-200 dark:border-gray-800 shadow-xl overflow-hidden">
@@ -588,28 +643,41 @@ export default function Earnings() {
                    <th className="px-6 py-4">Rider</th>
                    <th className="px-6 py-4 text-center">Days</th>
                    <th className="px-6 py-4 text-center">Deliveries</th>
-                   <th className="px-6 py-4 text-center">Earnings</th>
-                   <th className="px-6 py-4 text-center">Advances</th>
-                   <th className="px-6 py-4 text-center">Balance</th>
+                   <th className="px-6 py-4 text-center">This Month Earned</th>
+                   <th className="px-6 py-4 text-center">This Month Paid</th>
+                   <th className="px-6 py-4 text-center">Net Payable (All Time)</th>
                    <th className="px-6 py-4"></th>
                  </tr>
                </thead>
                <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                 {monthlyEarnings.map(r => (
+                 {monthlyEarnings.map(r => {
+                   const cumulativeBalance = allTimeBalances[r.riderId]?.netBalance ?? r.balanceDue;
+                   return (
                    <tr key={r.riderId} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                      <td className="px-6 py-4 font-bold dark:text-white">{r.riderName}</td>
                      <td className="px-6 py-4 text-center font-bold text-gray-700 dark:text-gray-300">{r.totalDays}d</td>
                      <td className="px-6 py-4 text-center font-mono font-bold text-gray-600 dark:text-gray-400">{r.totalDeliveries}</td>
                      <td className="px-6 py-4 text-center font-mono font-black text-gray-700 dark:text-gray-200">₹{r.totalSalary.toLocaleString()}</td>
-                     <td className="px-6 py-4 text-center font-mono font-black text-rose-500 dark:text-rose-400">₹{r.totalPaid.toLocaleString()}</td>
-                     <td className="px-6 py-4 text-center font-mono font-black text-emerald-600 dark:text-emerald-500">₹{r.balanceDue.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-center font-mono font-black text-blue-500 dark:text-blue-400">₹{r.totalPaid.toLocaleString()}</td>
+                     <td className="px-6 py-4 text-center">
+                       <span className={`font-mono font-black text-sm px-3 py-1 rounded-xl ${
+                         cumulativeBalance > 0 
+                           ? 'text-rose-600 bg-rose-50 dark:bg-rose-900/20 dark:text-rose-400'
+                           : cumulativeBalance < 0
+                           ? 'text-emerald-600 bg-emerald-50 dark:bg-emerald-900/20 dark:text-emerald-400'
+                           : 'text-gray-500 bg-gray-50'
+                       }`}>
+                         ₹{Math.abs(cumulativeBalance).toLocaleString()}
+                         {cumulativeBalance < 0 && <span className="text-[9px] ml-1 font-black">OVERPAID</span>}
+                       </span>
+                     </td>
                      <td className="px-6 py-4 text-right">
                        <button onClick={() => openPayoutModal(r.riderId)} className="p-2 bg-gray-50 dark:bg-gray-800 hover:text-primary rounded-lg transition-colors text-gray-400">
                          <Plus size={16}/>
                        </button>
                      </td>
                    </tr>
-                 ))}
+                 )})}
                  {monthlyEarnings.length === 0 && (
                    <tr><td colSpan="7" className="p-8 text-center text-gray-500">No earnings data for this month.</td></tr>
                  )}
@@ -667,22 +735,28 @@ export default function Earnings() {
                     <p className="text-indigo-200 text-xs uppercase font-bold">Target</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-black text-amber-300">₹{individualData.totalPaid.toLocaleString()}</p>
-                    <p className="text-indigo-200 text-xs uppercase font-bold">Paid</p>
+                    <p className="text-3xl font-black text-amber-300">₹{(allTimeBalances[selectedRiderId]?.totalPaid || 0).toLocaleString()}</p>
+                    <p className="text-indigo-200 text-xs uppercase font-bold">Total Paid</p>
                   </div>
                   <div className="text-center">
-                    <p className="text-3xl font-black text-emerald-300">₹{individualData.balanceDue.toLocaleString()}</p>
-                    <p className="text-indigo-200 text-xs uppercase font-bold">Due</p>
+                    <p className={`text-3xl font-black ${
+                      (allTimeBalances[selectedRiderId]?.netBalance || 0) > 0 ? 'text-rose-300' : 'text-emerald-300'
+                    }`}>
+                      ₹{Math.abs(allTimeBalances[selectedRiderId]?.netBalance || 0).toLocaleString()}
+                    </p>
+                    <p className="text-indigo-200 text-xs uppercase font-bold">
+                      {(allTimeBalances[selectedRiderId]?.netBalance || 0) > 0 ? 'Net Due' : 'Overpaid'}
+                    </p>
                   </div>
                 </div>
               </div>
 
               {/* KPI Cards */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                <KPICard title="Days Present"    value={`${individualData.totalDays}d`}                            icon={Calendar}     color="from-blue-50 to-white dark:from-blue-900/30"    textColor="text-blue-600" />
-                <KPICard title="Total Delivered" value={individualData.totalDelivered}                          icon={CheckCircle2} color="from-emerald-50 to-white dark:from-emerald-900/30" textColor="text-emerald-600" />
-                <KPICard title="Advances Paid"  value={`₹${individualData.totalPaid.toLocaleString()}`}        icon={CreditCard}   color="from-rose-50 to-white dark:from-rose-900/30"    textColor="text-rose-600" />
-                <KPICard title="Net Payable"    value={`₹${individualData.balanceDue.toLocaleString()}`}      icon={IndianRupee}  color="from-amber-50 to-white dark:from-amber-900/30"   textColor="text-amber-600" />
+                <KPICard title="Days Present (This Month)"   value={`${individualData.totalDays}d`}                                                                           icon={Calendar}     color="from-blue-50 to-white dark:from-blue-900/30"    textColor="text-blue-600" />
+                <KPICard title="Delivered (This Month)"      value={individualData.totalDelivered}                                                                           icon={CheckCircle2} color="from-emerald-50 to-white dark:from-emerald-900/30" textColor="text-emerald-600" />
+                <KPICard title="Total Paid (All Time)"       value={`₹${(allTimeBalances[selectedRiderId]?.totalPaid || 0).toLocaleString()}`}                              icon={CreditCard}   color="from-rose-50 to-white dark:from-rose-900/30"    textColor="text-rose-600" />
+                <KPICard title="Net Payable (All Time)"      value={`₹${Math.abs(allTimeBalances[selectedRiderId]?.netBalance || 0).toLocaleString()}`}                     icon={IndianRupee}  color="from-amber-50 to-white dark:from-amber-900/30"   textColor="text-amber-600" />
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

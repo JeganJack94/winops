@@ -10,6 +10,7 @@ import { expenseService } from '../services/expenseService';
 import { settingsService } from '../services/settingsService';
 import { earningsService } from '../services/earningsService';
 import { settlementService } from '../services/settlementService';
+import { riderService } from '../services/riderService';
 import { useTheme } from '../context/ThemeContext';
 import { motion, AnimatePresence } from 'framer-motion';
 import { jsPDF } from 'jspdf';
@@ -20,18 +21,20 @@ import {
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
   Filler
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 
 ChartJS.register(
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Title,
   Tooltip,
   Legend,
@@ -66,19 +69,23 @@ export default function Reports() {
   const [isExporting, setIsExporting] = useState(false);
   const [trendGranularity, setTrendGranularity] = useState('daily'); // daily, weekly, monthly
   const [activeTab, setActiveTab] = useState('analytics'); // analytics, settlements
+  const [selectedMonth, setSelectedMonth] = useState(null);
+  const [riders, setRiders] = useState([]);
 
   useEffect(() => {
-    const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords);
-    const unsubExpenses = expenseService.subscribeToExpenses(setExpenses);
+    const unsubRecords = deliveryService.subscribeToDailyRecords(setAllRecords, 1000);
+    const unsubExpenses = expenseService.subscribeToExpenses(setExpenses, 1000);
     const unsubPayouts = earningsService.subscribeToPayouts(setPayouts);
     const unsubSettings = settingsService.subscribeToSettings(setSettings);
     const unsubSettlements = settlementService.subscribeToSettlements(setSettlements);
+    const unsubRiders = riderService.subscribeToRiders(setRiders);
     return () => {
       unsubRecords();
       unsubExpenses();
       unsubPayouts();
       unsubSettings();
       unsubSettlements();
+      unsubRiders();
     };
   }, []);
 
@@ -375,6 +382,137 @@ export default function Reports() {
       .sort((a, b) => b.key.localeCompare(a.key));
   }, [allRecords, settings]);
 
+  const monthlyData = useMemo(() => {
+    const rate = Number(settings.ratePerParcel) || 18;
+    const months = {};
+
+    // 1. Process all daily records (Revenue)
+    allRecords.forEach(record => {
+      if (!record.date) return;
+      const monthKey = record.date.substring(0, 7); // 'YYYY-MM'
+      if (!months[monthKey]) {
+        const dateObj = new Date(record.date);
+        const label = dateObj.toLocaleString('default', { month: 'long', year: 'numeric' });
+        months[monthKey] = {
+          monthKey,
+          label,
+          revenue: 0,
+          expenses: 0,
+          salaries: 0,
+          rawExpenses: [],
+          rawPayouts: []
+        };
+      }
+      const completed = Number(record.totalCompleted) || 0;
+      months[monthKey].revenue += completed * rate;
+    });
+
+    // 2. Process all expenses
+    expenses.forEach(exp => {
+      if (!exp.date) return;
+      const monthKey = exp.date.substring(0, 7);
+      if (!months[monthKey]) {
+        const dateObj = new Date(exp.date);
+        const label = dateObj.toLocaleString('default', { month: 'long', year: 'numeric' });
+        months[monthKey] = {
+          monthKey,
+          label,
+          revenue: 0,
+          expenses: 0,
+          salaries: 0,
+          rawExpenses: [],
+          rawPayouts: []
+        };
+      }
+      const amt = Number(exp.amount) || 0;
+      months[monthKey].expenses += amt;
+      months[monthKey].rawExpenses.push(exp);
+    });
+
+    // 3. Process all payouts (Salaries)
+    payouts.forEach(p => {
+      if (!p.date) return;
+      const monthKey = p.date.substring(0, 7);
+      if (!months[monthKey]) {
+        const dateObj = new Date(p.date);
+        const label = dateObj.toLocaleString('default', { month: 'long', year: 'numeric' });
+        months[monthKey] = {
+          monthKey,
+          label,
+          revenue: 0,
+          expenses: 0,
+          salaries: 0,
+          rawExpenses: [],
+          rawPayouts: []
+        };
+      }
+      const amt = Number(p.amount) || 0;
+      months[monthKey].salaries += amt;
+      
+      const rider = riders.find(r => r.id === p.riderId);
+      const riderName = rider ? rider.name : (p.riderName || 'N/A');
+      months[monthKey].rawPayouts.push({
+        ...p,
+        riderName
+      });
+    });
+
+    // 4. Calculate profit and sort months
+    const list = Object.values(months).map(m => {
+      m.rawExpenses.sort((a, b) => b.date.localeCompare(a.date));
+      m.rawPayouts.sort((a, b) => b.date.localeCompare(a.date));
+      return {
+        ...m,
+        profit: m.revenue - m.expenses - m.salaries
+      };
+    });
+
+    return list.sort((a, b) => b.monthKey.localeCompare(a.monthKey));
+  }, [allRecords, expenses, payouts, settings, riders]);
+
+  const monthlyChartData = useMemo(() => {
+    const sortedChronological = [...monthlyData].reverse();
+    const labels = sortedChronological.map(m => m.label);
+
+    return {
+      labels: labels.length > 0 ? labels : ['No Data'],
+      datasets: [
+        {
+          label: 'Revenue',
+          data: sortedChronological.map(m => m.revenue),
+          backgroundColor: 'rgba(16, 185, 129, 0.7)',
+          borderColor: '#10b981',
+          borderWidth: 1.5,
+          borderRadius: 6,
+        },
+        {
+          label: 'Expenses',
+          data: sortedChronological.map(m => m.expenses),
+          backgroundColor: 'rgba(244, 63, 94, 0.7)',
+          borderColor: '#f43f5e',
+          borderWidth: 1.5,
+          borderRadius: 6,
+        },
+        {
+          label: 'Salaries',
+          data: sortedChronological.map(m => m.salaries),
+          backgroundColor: 'rgba(59, 130, 246, 0.7)',
+          borderColor: '#3b82f6',
+          borderWidth: 1.5,
+          borderRadius: 6,
+        },
+        {
+          label: 'Net Profit',
+          data: sortedChronological.map(m => m.profit),
+          backgroundColor: 'rgba(245, 158, 11, 0.7)',
+          borderColor: '#f59e0b',
+          borderWidth: 1.5,
+          borderRadius: 6,
+        }
+      ]
+    };
+  }, [monthlyData]);
+
   const handleUpdateReceived = async (periodKey, amount) => {
     try {
       await settlementService.saveSettlement(periodKey, amount);
@@ -493,6 +631,89 @@ export default function Reports() {
     }
   };
 
+  const handleExportMonthlyReport = async (mdata) => {
+    setIsExporting(true);
+    try {
+      const doc = new jsPDF();
+      const pageWidth = doc.internal.pageSize.getWidth();
+      
+      // Header
+      doc.setFontSize(22);
+      doc.setTextColor(30, 41, 59);
+      doc.text(`Monthly Financial Report`, 14, 22);
+      
+      doc.setFontSize(14);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`${mdata.label}`, 14, 28);
+      
+      doc.setFontSize(10);
+      doc.text(`Generated on: ${new Date().toLocaleDateString()}`, 14, 34);
+      
+      // Summary Box
+      doc.setFillColor(248, 250, 252);
+      doc.rect(14, 40, pageWidth - 28, 35, 'F');
+      
+      doc.setFontSize(11);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Financial Summary', 20, 48);
+      
+      doc.setFontSize(10);
+      doc.text(`Revenue: ₹${mdata.revenue.toLocaleString()}`, 20, 56);
+      doc.text(`Expenses: ₹${mdata.expenses.toLocaleString()}`, 20, 64);
+      doc.text(`Salaries/Payouts: ₹${mdata.salaries.toLocaleString()}`, pageWidth / 2 + 10, 56);
+      doc.text(`Net Profit: ₹${mdata.profit.toLocaleString()}`, pageWidth / 2 + 10, 64);
+      
+      // Expenses Table
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Expenses Breakdown', 14, 90);
+      
+      const expenseRows = mdata.rawExpenses.map(e => [
+        e.date,
+        e.type || 'N/A',
+        e.notes || '-',
+        `₹${(e.amount || 0).toLocaleString()}`
+      ]);
+      
+      autoTable(doc, {
+        startY: 95,
+        head: [['Date', 'Category', 'Note', 'Amount']],
+        body: expenseRows,
+        theme: 'striped',
+        headStyles: { fillColor: [244, 63, 94] },
+        styles: { fontSize: 9 }
+      });
+      
+      // Salaries Table
+      const finalY = (doc.lastAutoTable?.finalY || 100) + 15;
+      doc.setFontSize(14);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Salaries/Payouts Breakdown', 14, finalY);
+      
+      const payoutRows = mdata.rawPayouts.map(p => [
+        p.date,
+        p.riderName || 'N/A',
+        p.type || 'Salary Advance',
+        `₹${(p.amount || 0).toLocaleString()}`
+      ]);
+      
+      autoTable(doc, {
+        startY: finalY + 5,
+        head: [['Date', 'Rider', 'Type', 'Amount']],
+        body: payoutRows,
+        theme: 'striped',
+        headStyles: { fillColor: [59, 130, 246] },
+        styles: { fontSize: 9 }
+      });
+      
+      doc.save(`Monthly_Report_${mdata.monthKey}.pdf`);
+    } catch (error) {
+      console.error('Monthly export failed:', error);
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <motion.div 
       initial="hidden"
@@ -565,6 +786,16 @@ export default function Reports() {
           }`}
         >
           Settlements
+        </button>
+        <button
+          onClick={() => setActiveTab('monthly')}
+          className={`px-6 py-2.5 rounded-xl text-sm font-bold transition-all ${
+            activeTab === 'monthly' 
+              ? 'bg-white dark:bg-slate-700 text-orange-600 shadow-sm' 
+              : 'text-slate-500 hover:text-slate-700 dark:hover:text-slate-300'
+          }`}
+        >
+          Monthly Report
         </button>
       </div>
 
@@ -867,6 +1098,290 @@ export default function Reports() {
                 </table>
               </CardContent>
             </Card>
+          </motion.div>
+        ) : activeTab === 'monthly' ? (
+          <motion.div
+            key="monthly"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="space-y-8"
+          >
+            {/* Monthly Variations Chart Card */}
+            <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+              <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50">
+                <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                  <TrendingUp className="h-5 w-5 text-orange-500" />
+                  Monthly Financial Variations
+                </CardTitle>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Comparing Revenue, Expenses, Salaries, and Net Profit.
+                </p>
+              </CardHeader>
+              <CardContent className="p-6">
+                <div className="h-[320px] w-full">
+                  <Bar 
+                    data={monthlyChartData}
+                    options={{
+                      responsive: true,
+                      maintainAspectRatio: false,
+                      plugins: {
+                        legend: { 
+                          position: 'top',
+                          labels: { 
+                            color: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                            font: { family: 'Inter', size: 12, weight: 'bold' }
+                          }
+                        },
+                        tooltip: {
+                          backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
+                          titleColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                          bodyColor: theme === 'dark' ? '#f8fafc' : '#0f172a',
+                          borderColor: theme === 'dark' ? '#334155' : '#e2e8f0',
+                          borderWidth: 1,
+                          padding: 12,
+                          cornerRadius: 12,
+                          callbacks: {
+                            label: (ctx) => ` ${ctx.dataset.label}: ₹${ctx.parsed.y.toLocaleString()}`
+                          }
+                        }
+                      },
+                      scales: {
+                        x: { 
+                          grid: { display: false },
+                          ticks: { 
+                            color: theme === 'dark' ? '#94a3b8' : '#64748b',
+                            font: { family: 'Inter', size: 11, weight: '500' }
+                          }
+                        },
+                        y: { 
+                          grid: { color: theme === 'dark' ? 'rgba(71, 85, 105, 0.1)' : 'rgba(226, 232, 240, 0.8)' },
+                          ticks: { 
+                            color: theme === 'dark' ? '#94a3b8' : '#64748b',
+                            font: { family: 'Inter', size: 11 },
+                            callback: (val) => `₹${val.toLocaleString()}`
+                          }
+                        }
+                      }
+                    }}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Monthly Report Table Card */}
+            <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+              <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50">
+                <CardTitle className="text-lg font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                  <PieChart className="h-5 w-5 text-orange-500" />
+                  Monthly Report
+                </CardTitle>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                  Summary of Revenue, Expenses, Salaries, and Net Profit.
+                </p>
+              </CardHeader>
+              <CardContent className="p-0 overflow-x-auto">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 dark:bg-slate-900/50 border-b border-slate-100 dark:border-slate-700/50">
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Month</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Revenue (A)</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Expenses (B)</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Salaries (C)</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500">Net Profit (A - B - C)</th>
+                      <th className="px-6 py-4 text-xs font-black uppercase tracking-widest text-slate-500 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                    {monthlyData.map((item) => {
+                      const isSelected = selectedMonth === item.monthKey;
+                      return (
+                        <tr 
+                          key={item.monthKey} 
+                          className={`hover:bg-slate-50/50 dark:hover:bg-slate-700/20 transition-colors cursor-pointer ${
+                            isSelected ? 'bg-orange-50/40 dark:bg-orange-500/10' : ''
+                          }`}
+                          onClick={() => setSelectedMonth(isSelected ? null : item.monthKey)}
+                        >
+                          <td className="px-6 py-5 font-bold text-slate-700 dark:text-slate-200">
+                            {item.label}
+                          </td>
+                          <td className="px-6 py-5 font-bold text-emerald-600 dark:text-emerald-400">
+                            ₹{item.revenue.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-5 font-bold text-rose-500">
+                            ₹{item.expenses.toLocaleString()}
+                          </td>
+                          <td className="px-6 py-5 font-bold text-blue-500">
+                            ₹{item.salaries.toLocaleString()}
+                          </td>
+                          <td className={`px-6 py-5 font-black text-base ${
+                            item.profit >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600'
+                          }`}>
+                            <span className={`px-3 py-1 rounded-full text-xs font-bold ${
+                              item.profit >= 0 
+                                ? 'bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400' 
+                                : 'bg-rose-50 dark:bg-rose-900/20 text-rose-600'
+                            }`}>
+                              ₹{item.profit.toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-6 py-5 text-right">
+                            <div className="flex items-center justify-end gap-2" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+                                  isSelected 
+                                    ? 'bg-orange-600 text-white' 
+                                    : 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-200 hover:bg-orange-50 dark:hover:bg-orange-950 hover:text-orange-600'
+                                }`}
+                                onClick={() => setSelectedMonth(isSelected ? null : item.monthKey)}
+                              >
+                                {isSelected ? 'Hide Details' : 'View Details'}
+                              </button>
+                              <button
+                                className="p-2 bg-slate-100 dark:bg-slate-700 hover:bg-orange-600 hover:text-white text-slate-600 dark:text-slate-200 rounded-xl transition-all shadow-sm active:scale-95"
+                                onClick={() => handleExportMonthlyReport(item)}
+                                title="Download PDF Report"
+                              >
+                                <Download className="h-4 w-4" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {monthlyData.length === 0 && (
+                      <tr>
+                        <td colSpan="6" className="px-6 py-20 text-center text-slate-400 font-bold uppercase tracking-widest text-xs">
+                          No historical data found for monthly reports
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </CardContent>
+            </Card>
+
+            {/* Selected Month Breakdown Section */}
+            <AnimatePresence mode="wait">
+              {selectedMonth && (() => {
+                const activeMonthData = monthlyData.find(m => m.monthKey === selectedMonth);
+                if (!activeMonthData) return null;
+                return (
+                  <motion.div
+                    key={selectedMonth}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -20 }}
+                    className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+                  >
+                    {/* Expenses Detail Card */}
+                    <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+                      <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50">
+                        <CardTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                          <TrendingDown className="h-5 w-5 text-rose-500" />
+                          Expenses Breakdown ({activeMonthData.label})
+                        </CardTitle>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Total Expenses: ₹{activeMonthData.expenses.toLocaleString()}
+                        </p>
+                      </CardHeader>
+                      <CardContent className="p-0 max-h-[400px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-700/50">
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400">Date</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400">Category</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400">Note</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                            {activeMonthData.rawExpenses.map((exp) => (
+                              <tr key={exp.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/30 transition-colors">
+                                <td className="px-4 py-3 text-xs font-medium text-slate-600 dark:text-slate-300">
+                                  {new Date(exp.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-50 dark:bg-rose-950 text-rose-600 dark:text-rose-400 uppercase">
+                                    {exp.type}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-xs text-slate-500 dark:text-slate-400 max-w-[150px] truncate">
+                                  {exp.notes || '-'}
+                                </td>
+                                <td className="px-4 py-3 text-xs font-bold text-slate-900 dark:text-white text-right">
+                                  ₹{exp.amount.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                            {activeMonthData.rawExpenses.length === 0 && (
+                              <tr>
+                                <td colSpan="4" className="px-4 py-8 text-center text-xs text-slate-400">
+                                  No expenses recorded this month
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </CardContent>
+                    </Card>
+
+                    {/* Salaries Detail Card */}
+                    <Card className="border-none shadow-xl shadow-slate-200/50 dark:shadow-none bg-white dark:bg-slate-800 overflow-hidden">
+                      <CardHeader className="p-6 border-b border-slate-50 dark:border-slate-700/50">
+                        <CardTitle className="text-base font-bold flex items-center gap-2 text-slate-900 dark:text-white">
+                          <DollarSign className="h-5 w-5 text-blue-500" />
+                          Salaries Breakdown ({activeMonthData.label})
+                        </CardTitle>
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          Total Salaries/Payouts: ₹{activeMonthData.salaries.toLocaleString()}
+                        </p>
+                      </CardHeader>
+                      <CardContent className="p-0 max-h-[400px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50/50 dark:bg-slate-900/30 border-b border-slate-100 dark:border-slate-700/50">
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400">Date</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400">Rider</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400">Type</th>
+                              <th className="px-4 py-3 text-xs font-bold text-slate-400 text-right">Amount</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-50 dark:divide-slate-700/50">
+                            {activeMonthData.rawPayouts.map((p) => (
+                              <tr key={p.id} className="hover:bg-slate-50/30 dark:hover:bg-slate-800/30 transition-colors">
+                                <td className="px-4 py-3 text-xs font-medium text-slate-600 dark:text-slate-300">
+                                  {new Date(p.date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' })}
+                                </td>
+                                <td className="px-4 py-3 text-xs font-bold text-slate-700 dark:text-slate-300">
+                                  {p.riderName || 'N/A'}
+                                </td>
+                                <td className="px-4 py-3">
+                                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 dark:bg-blue-950 text-blue-600 dark:text-blue-400 uppercase">
+                                    {p.type || 'Salary Advance'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-xs font-bold text-slate-900 dark:text-white text-right">
+                                  ₹{p.amount.toLocaleString()}
+                                </td>
+                              </tr>
+                            ))}
+                            {activeMonthData.rawPayouts.length === 0 && (
+                              <tr>
+                                <td colSpan="4" className="px-4 py-8 text-center text-xs text-slate-400">
+                                  No payouts/salaries recorded this month
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })()}
+            </AnimatePresence>
           </motion.div>
         ) : null}
       </AnimatePresence>

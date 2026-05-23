@@ -147,6 +147,14 @@ export default function Expenses() {
   const totalExpenses = useMemo(() =>
     expenses.reduce((sum, e) => sum + (Number(e.amount) || 0), 0), [expenses]);
 
+  const currentMonthKey = new Date().toISOString().slice(0, 7);
+  const currentMonthLabel = new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' });
+  const currentMonthTotal = useMemo(() =>
+    expenses
+      .filter(e => e.date && e.date.startsWith(currentMonthKey))
+      .reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+  [expenses, currentMonthKey]);
+
   const trendData = useMemo(() => {
     if (expenses.length === 0) return { labels: [], data: [] };
 
@@ -256,7 +264,10 @@ export default function Expenses() {
   };
 
   const donutChartData = useMemo(() => {
-    const totals = expenses.reduce((acc, curr) => {
+    const currentMonthKey = new Date().toISOString().slice(0, 7); // 'YYYY-MM'
+    const currentMonthExpenses = expenses.filter(e => e.date && e.date.startsWith(currentMonthKey));
+
+    const totals = currentMonthExpenses.reduce((acc, curr) => {
       acc[curr.type] = (acc[curr.type] || 0) + (Number(curr.amount) || 0);
       return acc;
     }, {});
@@ -386,14 +397,16 @@ export default function Expenses() {
         <div className="lg:col-span-3 flex flex-col gap-4">
           <SummaryCard
             icon={<TrendingDown size={20} />}
-            label="Total Expenses"
-            value={`₹${totalExpenses.toLocaleString()}`}
+            label={`${currentMonthLabel}`}
+            sublabel="This Month's Expenses"
+            value={`₹${currentMonthTotal.toLocaleString()}`}
             accent="#f97316"
             theme={theme}
           />
           <SummaryCard
             icon={<FileText size={20} />}
             label="Total Entries"
+            sublabel="All time"
             value={expenses.length}
             accent="#8b5cf6"
             theme={theme}
@@ -419,7 +432,7 @@ export default function Expenses() {
 
         <div className="md:col-span-1 lg:col-span-3 bg-white dark:bg-slate-800 rounded-[2.5rem] border border-slate-100 dark:border-slate-800 shadow-xl shadow-slate-200/50 dark:shadow-none p-6">
           <h3 className="text-sm font-black text-slate-900 dark:text-white uppercase tracking-wider mb-6">
-            Breakdown
+            Breakdown ({new Date().toLocaleString('en-IN', { month: 'short', year: 'numeric' })})
           </h3>
           <div className="h-[200px] w-full flex items-center justify-center">
             <Doughnut
@@ -759,7 +772,7 @@ export default function Expenses() {
 
 /* ─── Sub-components ─── */
 
-function SummaryCard({ icon, label, value, accent, theme }) {
+function SummaryCard({ icon, label, sublabel, value, accent, theme }) {
   return (
     <div style={{
       background: theme === 'dark' ? '#1f2937' : '#fff',
@@ -778,9 +791,14 @@ function SummaryCard({ icon, label, value, accent, theme }) {
       <div style={{ fontSize: '22px', fontWeight: 700, color: theme === 'dark' ? '#f9fafb' : '#111827', lineHeight: 1.2 }}>
         {value}
       </div>
-      <div style={{ fontSize: '12px', color: theme === 'dark' ? '#6b7280' : '#9ca3af', marginTop: '4px', fontWeight: 500 }}>
+      <div style={{ fontSize: '12px', color: theme === 'dark' ? '#6b7280' : '#9ca3af', marginTop: '4px', fontWeight: 600 }}>
         {label}
       </div>
+      {sublabel && (
+        <div style={{ fontSize: '10px', color: theme === 'dark' ? '#4b5563' : '#d1d5db', marginTop: '2px', fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {sublabel}
+        </div>
+      )}
     </div>
   );
 }
