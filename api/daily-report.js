@@ -1,3 +1,4 @@
+/* global process */
 import { initializeApp, cert, getApps } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import twilio from 'twilio';
@@ -49,10 +50,14 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Database not securely configured.' });
   }
 
+  try {
+    const options = { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit' };
+    const istDate = new Intl.DateTimeFormat('en-CA', options).format(new Date());
+
     const reportType = req.query.type || 'daily'; // daily, pending, recap
-    
+
     let messageBody = '';
-    
+
     if (reportType === 'pending') {
       messageBody = `⏳ *WinOps 4 PM Pending Alert - ${istDate}*\n\n`;
     } else if (reportType === 'recap') {
@@ -119,17 +124,17 @@ export default async function handler(req, res) {
     } else {
       // 2b. Daily or Pending Logic
       const summarySnapshot = await db.collection('daily_records').where('date', '==', istDate).get();
-      
+
       if (summarySnapshot.empty) {
         messageBody += `⚠️ *No operational records found for today.*`;
       } else {
         const record = summarySnapshot.docs[0].data();
         const riders = record.riders || [];
-        
+
         if (reportType === 'pending') {
           const pending = Number(record.totalPending) || 0;
           messageBody += `⚠️ *Action Required: ${pending} items pending at hub.*\n\n`;
-          
+
           const ridersWithPending = riders.filter(r => (Number(r.assignedDelivery) || 0) - (Number(r.completedDelivery) || 0) > 0);
           if (ridersWithPending.length > 0) {
             messageBody += `⏳ *Pending by Rider:*\n`;
@@ -140,21 +145,24 @@ export default async function handler(req, res) {
           }
         } else {
           // ORIGINAL DAILY LOGIC (10 PM)
-          const received = (Number(record.receivedDelivery) || 0) + (Number(record.receivedPickup) || 0);
-          const delivered = Number(record.totalCompleted) || 0;
-          const pending = Number(record.totalPending) || 0;
+          const riders = record.riders || [];
+          const totalAssignedDelivery = riders.reduce((sum, r) => sum + (Number(r.assignedDelivery) || 0), 0);
+          const totalCompletedDelivery = riders.reduce((sum, r) => sum + (Number(r.completedDelivery) || 0), 0);
+          const totalAssignedPickup = riders.reduce((sum, r) => sum + (Number(r.assignedPickup) || 0), 0);
+          const totalCompletedPickup = riders.reduce((sum, r) => sum + (Number(r.completedPickup) || 0), 0);
           const successRate = record.successRate || 0;
 
           messageBody += `📊 *OVERALL SUMMARY*\n`;
-          messageBody += `📦 Received: ${received}\n`;
-          messageBody += `✅ Delivered: ${delivered}\n`;
-          messageBody += `⏳ Pending: ${pending}\n`;
-          messageBody += `🎯 Overall Success: ${successRate}%\n\n`;
+          messageBody += `📦 Parcel Assigned: ${totalAssignedDelivery}\n`;
+          messageBody += `✅ Parcel Delivered: ${totalCompletedDelivery}\n`;
+          messageBody += `📦 Pickup Assigned: ${totalAssignedPickup}\n`;
+          messageBody += `✅ Pickup Completed: ${totalCompletedPickup}\n`;
+          messageBody += `🎯 Success Rate: ${successRate}%\n\n`;
 
           if (riders.length > 0) {
             const sortedRiders = [...riders].sort((a, b) => (Number(b.successRate) || 0) - (Number(a.successRate) || 0));
             const topPerformers = sortedRiders.filter(r => (Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0) > 0).slice(0, 3);
-            
+
             if (topPerformers.length > 0) {
               messageBody += `⭐ *TOP PERFORMANCE*\n`;
               topPerformers.forEach((r, i) => {
@@ -163,7 +171,6 @@ export default async function handler(req, res) {
               messageBody += `\n`;
             }
 
-            let alerts = '';
             const highPerformance = riders.filter(r => r.successRate >= 80 && r.successRate <= 100);
             const lowPerformance = riders.filter(r => r.successRate >= 70 && r.successRate < 80);
             const criticalPerformance = riders.filter(r => r.successRate < 70 && ((Number(r.assignedDelivery) || 0) + (Number(r.assignedPickup) || 0) > 0));
@@ -205,7 +212,7 @@ export default async function handler(req, res) {
           from: `whatsapp:${process.env.WHATSAPP_FROM_NUMBER.trim()}`,
           to: `whatsapp:${targetNumber}`
         });
-        
+
         console.log(`✅ WhatsApp report sent to ${targetNumber}. SID: ${response.sid}`);
         results.push({ number: targetNumber, status: 'sent', sid: response.sid });
       } catch (err) {
@@ -214,11 +221,11 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({ 
-      success: true, 
+    return res.status(200).json({
+      success: true,
       message: 'Daily report processing complete.',
       timestamp: new Date().toISOString(),
-      results 
+      results
     });
 
   } catch (error) {

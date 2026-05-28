@@ -308,31 +308,36 @@ export default function Delivery() {
       year: 'numeric'
     });
 
-    const totalAssignedValue = (Number(totalAssignedDelivery) || 0) + (Number(totalAssignedPickup) || 0);
-    const totalCompletedValue = (Number(totalCompletedDelivery) || 0) + (Number(totalCompletedPickup) || 0);
-    const totalPending = (Number(pendingDelivery) || 0) + (Number(pendingPickup) || 0);
-
-    // Format riders into a clean table
-    const tableHeader = `*RIDER*      | *ASS* | *CMP* | *Pickup* | *SR%*`;
-    const separator = `--------------------------------------`;
+    // Format riders into a clean table (Deliveries only)
+    const tableHeader = `*RIDER*      | *ASS* | *CMP* | *SR%*`;
+    const separator = `----------------------------`;
     
     const ridersList = currentRiders.map(r => {
       const assignedDel = Number(r.assignedDelivery) || 0;
       const completedDel = Number(r.completedDelivery) || 0;
-      const completedPick = Number(r.completedPickup) || 0;
+      
+      // Calculate rider delivery success rate
+      const deliverySR = assignedDel > 0 ? Math.round((completedDel / assignedDel) * 100) : 0;
       
       // Pad name for semi-alignment (works best on most common fonts)
       const name = r.riderName.length > 10 ? r.riderName.substring(0, 9) + '.' : r.riderName.padEnd(10);
-      const pickStr = String(completedPick).padStart(2, '0');
-      return `${name} | ${String(assignedDel).padStart(3)} | ${String(completedDel).padStart(3)} |   ${pickStr}   | ${r.successRate}%`;
+      return `${name} | ${String(assignedDel).padStart(3)} | ${String(completedDel).padStart(3)} | ${String(deliverySR).padStart(2)}%`;
     }).join('\n');
 
     // Hub Header
     const header = `*Win Express – Daily Report*\nDate: ${dateStr}\n`;
     
     // Performance Summary
-    const summary = `----------------------------\n*OVERALL SUMMARY*:\n----------------------------\n📦 Total Assigned: ${totalAssignedValue}\n✅ Total Completed: ${totalCompletedValue}\n⏳ Total Pending: ${totalPending}\n💰 Total Collection: ₹${totalAmountCollected.toLocaleString()}\n🎯 Success Rate: ${overallSuccessRate}%\n📥 Total Pickups: ${totalCompletedPickup}\n----------------------------`;
-
+    const summary = `----------------------------
+*OVERALL SUMMARY*:
+----------------------------
+📦 Total Assigned: ${totalAssignedDelivery}
+✅ Total Completed: ${totalCompletedDelivery}
+📦 Pickup Assigned: ${totalAssignedPickup}
+✅ Pickup Completed: ${totalCompletedPickup}
+💰 Total Collection: ₹${totalAmountCollected.toLocaleString()}
+🎯 Success Rate: ${overallSuccessRate}%
+----------------------------`;
 
     const text = `${header}\n${tableHeader}\n${separator}\n${ridersList}\n\n${summary}`;
     
